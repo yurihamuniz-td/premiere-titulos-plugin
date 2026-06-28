@@ -31,10 +31,14 @@ UTF-8, uma linha por título. Colunas (cabeçalho opcional; se ausente, assume e
 | `manchete`  | texto principal                            | sim         |
 | `subtitulo` | texto secundário (pode ficar vazio)        | não         |
 
-- **Acentos**: salve o CSV como **UTF-8**. O parser trata BOM e acentos do português.
+- **Acentos**: salve o CSV como **UTF-8**. O parser trata BOM e acentos do português
+  (inclusive a forma decomposta/NFD de CSV gerado no macOS).
 - **Delimitador**: aceita vírgula (`,`) **ou** ponto-e-vírgula (`;`) — detectado
   automaticamente (Excel pt-BR costuma exportar com `;`).
 - **Vírgula no texto**: use aspas, ex.: `centered,"Sora, Runway e Pika",`.
+- **Ordem das colunas**: a 1ª coluna precisa ser `estilo` (ou o cabeçalho `estilo`).
+  Não acrescente uma coluna de `id`/índice antes dela — o pareamento usa a ordem
+  `estilo, manchete, subtitulo`.
 
 Veja [`template.csv`](template.csv) para um exemplo pronto.
 

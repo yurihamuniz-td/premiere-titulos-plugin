@@ -51,18 +51,27 @@ function stripBom(text) {
   return text || '';
 }
 
-/* normaliza chave: minúsculo, sem acentos comuns do PT */
+/* normaliza chave: minúsculo, sem acentos do PT. Trata tanto a forma
+ * pré-composta (NFC: 'í') quanto a decomposta (NFD: 'i' + marca combinante,
+ * comum em CSV gerado no macOS) — senão a coluna "Subtítulo" passa batido. */
 function _normKey(s) {
   s = _trim(s).toLowerCase();
+  s = s.replace(/[\u0300-\u036f]/g, '');   /* remove marcas diacríticas combinantes (NFD) */
   s = s.replace(/[áàâãä]/g, 'a').replace(/[éèê]/g, 'e').replace(/[íì]/g, 'i')
        .replace(/[óòôõ]/g, 'o').replace(/[úù]/g, 'u').replace(/ç/g, 'c');
   return s;
 }
 
-/* sniff do delimitador na 1ª linha não vazia: ';' (Excel pt-BR) ou ',' */
+/* sniff do delimitador na 1ª linha NÃO VAZIA: ';' (Excel pt-BR) ou ','.
+ * Pular linhas em branco do topo é essencial — senão um CSV pt-BR com ';' e uma
+ * linha em branco inicial cairia no default ',' e seria parseado como lixo. */
 function detectDelimiter(text) {
-  var nl = text.indexOf('\n');
-  var firstLine = nl === -1 ? text : text.substring(0, nl);
+  var lines = String(text).split('\n');
+  var firstLine = '';
+  var j;
+  for (j = 0; j < lines.length; j++) {
+    if (_trim(lines[j]) !== '') { firstLine = lines[j]; break; }
+  }
   var semi = 0, comma = 0, k, ch;
   for (k = 0; k < firstLine.length; k++) {
     ch = firstLine.charAt(k);
@@ -140,12 +149,14 @@ function parseRows(text) {
   var grid = parseDelimited(text, delim);
   var clean = [];
   var r;
+  /* guarda o nº de linha FÍSICO (1-based) junto das células, para que mensagens
+   * de erro apontem a linha certa mesmo com linhas em branco no meio do arquivo. */
   for (r = 0; r < grid.length; r++) {
-    if (!_rowIsEmpty(grid[r])) clean.push(grid[r]);
+    if (!_rowIsEmpty(grid[r])) clean.push({ cells: grid[r], line: r + 1 });
   }
   if (clean.length === 0) { result.errors.push('CSV sem linhas de conteúdo.'); return result; }
 
-  var head = clean[0];
+  var head = clean[0].cells;
   var col = { estilo: -1, manchete: -1, subtitulo: -1 };
   /* É cabeçalho só se a 1ª célula for um nome de coluna conhecido. Uma linha de
    * dados começa com o estilo (l3rd/centered/question), que nunca é cabeçalho —
@@ -173,14 +184,19 @@ function parseRows(text) {
     return result;
   }
 
+  if (clean.length === startRow) {   /* só cabeçalho, nenhuma linha de dados */
+    result.errors.push('CSV tem cabeçalho mas nenhuma linha de dados.');
+    return result;
+  }
+
   var dr;
   for (dr = startRow; dr < clean.length; dr++) {
-    var cells = clean[dr];
+    var cells = clean[dr].cells;
     var estiloRaw = col.estilo >= 0 && col.estilo < cells.length ? cells[col.estilo] : '';
     var manchete = col.manchete >= 0 && col.manchete < cells.length ? cells[col.manchete] : '';
     var subt = col.subtitulo >= 0 && col.subtitulo < cells.length ? cells[col.subtitulo] : '';
     result.rows.push({
-      line: dr + 1,                               /* nº de linha 1-based p/ mensagens */
+      line: clean[dr].line,                       /* nº de linha física p/ mensagens */
       estiloRaw: _trim(estiloRaw),
       estilo: normalizeStyle(estiloRaw),          /* canônico ou null */
       manchete: _trim(manchete),
@@ -235,13 +251,20 @@ function validate(parseResult, markers) {
       problems.push({ level: 'error', message: 'Linha ' + row.line + ': manchete vazia.' });
     }
   }
+  /* range inválido (in >= out). Na prática o host já filtra esses marcadores
+   * (só passa out > in), mas a camada pura valida por conta própria. */
+  for (i = 0; i < markers.length; i++) {
+    if (markers[i].end <= markers[i].start) {
+      problems.push({ level: 'error', message: 'Marcador ' + (i + 1) + ': range inválido (in >= out).' });
+    }
+  }
   return problems;
 }
 
 /* ───────────────────────── preview ───────────────────────── */
 
 function formatTimecode(sec) {
-  if (sec === null || sec === undefined || isNaN(sec)) return '--:--';
+  if (sec === null || sec === undefined || isNaN(sec) || sec < 0 || !isFinite(sec)) return '--:--';
   var s = Math.floor(sec);
   var hh = Math.floor(s / 3600);
   var mm = Math.floor((s % 3600) / 60);

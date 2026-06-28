@@ -172,3 +172,47 @@ test('integração: CSV pt-BR (;) com acento + 3 linhas pareadas e validadas', (
   assert.equal(preview[1].manchete, 'Sora, Runway e Pika: a corrida da IA');
   assert.equal(preview[2].estilo, 'question');
 });
+
+/* ---- regressões da revisão adversarial (bugs de canto silenciosos) ---- */
+
+test('regressão: linha em branco inicial não engana a detecção de ; (pt-BR)', () => {
+  const csv = '\nestilo;manchete;subtitulo\nl3rd;Olá;mundo';
+  const r = core.parseRows(csv);
+  assert.equal(r.delimiter, ';');          // antes caía no default ','
+  assert.equal(r.rows.length, 1);
+  assert.equal(r.rows[0].estilo, 'l3rd');
+  assert.equal(r.rows[0].manchete, 'Olá');
+  assert.equal(r.rows[0].subtitulo, 'mundo');
+});
+
+test('regressão: cabeçalho "subtítulo" em NFD (Mac) ainda casa a coluna', () => {
+  const csv = ('estilo,manchete,subtítulo\nl3rd,Title,SubVal').normalize('NFD');
+  const r = core.parseRows(csv);
+  assert.equal(r.rows[0].subtitulo, 'SubVal');   // antes vinha '' silenciosamente
+});
+
+test('regressão: nº de linha aponta a linha física mesmo com linhas em branco', () => {
+  const csv = 'estilo,manchete,subtitulo\nl3rd,A,\n\n\nbanana,,';
+  const r = core.parseRows(csv);
+  const bad = r.rows[r.rows.length - 1];
+  assert.equal(bad.line, 5);                      // header=1, l3rd=2, blanks=3&4, 'banana'=5
+  const problems = core.validate(r, [rng(1, 2), rng(3, 4)]);
+  assert.ok(problems.some(p => /Linha 5:/.test(p.message)));
+});
+
+test('regressão: formatTimecode trata negativo e infinito', () => {
+  assert.equal(core.formatTimecode(-5), '--:--');
+  assert.equal(core.formatTimecode(Infinity), '--:--');
+});
+
+test('regressão: CSV só com cabeçalho avisa falta de dados', () => {
+  const r = core.parseRows('estilo,manchete,subtitulo');
+  assert.equal(r.rows.length, 0);
+  assert.ok(r.errors.some(e => /nenhuma linha de dados/.test(e)));
+});
+
+test('regressão: marcador com range invertido (in >= out) é erro', () => {
+  const r = core.parseRows('estilo,manchete,subtitulo\nl3rd,A,');
+  const problems = core.validate(r, [{ start: 10, end: 5 }]);
+  assert.ok(problems.some(p => /range inválido/.test(p.message)));
+});
