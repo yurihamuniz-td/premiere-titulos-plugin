@@ -1,0 +1,10 @@
+{
+  "name": "premiere-titulos-plugin",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Painel CEP do Premiere que insere lower-thirds (MOGRT) a partir de um CSV pareado com range markers da timeline.",
+  "scripts": {
+    "test": "node --test"
+  },
+  "license": "UNLICENSED"
+}

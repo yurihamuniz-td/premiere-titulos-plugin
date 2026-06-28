@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <title>Inserir Títulos</title>
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+  <header>
+    <h1>Inserir Títulos</h1>
+    <p id="env" class="env">Verificando sequência ativa…</p>
+  </header>
+
+  <section class="settings">
+    <details>
+      <summary>Configurações</summary>
+      <label>Track de vídeo alvo
+        <select id="trackIndex" title="Em qual track de vídeo os títulos entram">
+          <option value="0">V1</option>
+          <option value="1">V2</option>
+          <option value="2" selected>V3</option>
+          <option value="3">V4</option>
+          <option value="4">V5</option>
+        </select>
+      </label>
+      <label>Pasta dos .mogrt
+        <span class="row">
+          <input id="mogrtDir" type="text" placeholder="…/mogrt" spellcheck="false">
+          <button id="browseDir" class="ghost" type="button">Escolher…</button>
+        </span>
+      </label>
+      <p class="hint">Cor de marcador não é usada para filtrar (limitação da API do Premiere): contam todos os marcadores de <em>range</em> (in/out).</p>
+    </details>
+  </section>
+
+  <section class="actions">
+    <button id="loadCsv" type="button">Carregar CSV…</button>
+    <span id="csvName" class="csv-name" title="">nenhum CSV carregado</span>
+  </section>
+
+  <div id="problems" class="problems" hidden></div>
+
+  <section class="preview">
+    <div class="preview-head">
+      <span id="counts" class="counts"></span>
+    </div>
+    <div class="table-wrap">
+      <table id="previewTable">
+        <thead>
+          <tr><th>#</th><th>Tempo (in–out)</th><th>Estilo</th><th>Manchete / Subtítulo</th></tr>
+        </thead>
+        <tbody id="previewBody">
+          <tr class="empty"><td colspan="4">Carregue um CSV para ver o pareamento marcador ↔ linha.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <footer>
+    <button id="apply" type="button" disabled>Aplicar</button>
+    <span id="result" class="result"></span>
+  </footer>
+
+  <script src="js/CSInterface.js"></script>
+  <script src="js/main.js"></script>
+</body>
+</html>

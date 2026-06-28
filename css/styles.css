@@ -1,0 +1,91 @@
+/* Painel CEP — visual escuro alinhado ao Premiere. Sem framework, só o necessário. */
+* { box-sizing: border-box; }
+
+:root {
+  --bg: #1e1e1e;
+  --panel: #2b2b2b;
+  --panel-2: #333;
+  --border: #3c3c3c;
+  --text: #e6e6e6;
+  --muted: #9a9a9a;
+  --accent: #4a90d9;
+  --accent-hover: #5a9fe6;
+  --error-bg: #4a2222;
+  --error-border: #7a3434;
+  --ok: #4caf72;
+}
+
+html, body {
+  margin: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font: 12px/1.45 "Segoe UI", Tahoma, sans-serif;
+}
+
+body {
+  display: flex;
+  flex-direction: column;
+  padding: 10px 12px;
+  gap: 10px;
+}
+
+header h1 { margin: 0; font-size: 14px; font-weight: 600; }
+.env { margin: 2px 0 0; color: var(--muted); font-size: 11px; }
+.env.warn { color: #e0a96d; }
+.env.ok { color: var(--ok); }
+
+/* settings */
+.settings details { background: var(--panel); border: 1px solid var(--border); border-radius: 4px; padding: 4px 8px; }
+.settings summary { cursor: pointer; color: var(--muted); padding: 4px 0; user-select: none; }
+.settings label { display: block; margin: 8px 0; }
+.settings .row { display: flex; gap: 6px; margin-top: 4px; }
+.settings input[type=text], .settings select {
+  width: 100%; background: var(--panel-2); color: var(--text);
+  border: 1px solid var(--border); border-radius: 3px; padding: 5px 6px; font: inherit;
+}
+.hint { color: var(--muted); font-size: 10.5px; margin: 6px 0 2px; }
+
+/* buttons */
+button {
+  background: var(--accent); color: #fff; border: none; border-radius: 3px;
+  padding: 7px 12px; font: inherit; font-weight: 600; cursor: pointer;
+}
+button:hover:not(:disabled) { background: var(--accent-hover); }
+button:disabled { opacity: 0.45; cursor: default; }
+button.ghost { background: var(--panel-2); color: var(--text); font-weight: 400; border: 1px solid var(--border); white-space: nowrap; }
+button.ghost:hover { background: #3d3d3d; }
+
+.actions { display: flex; align-items: center; gap: 10px; }
+.csv-name { color: var(--muted); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* problems banner */
+.problems {
+  background: var(--error-bg); border: 1px solid var(--error-border);
+  border-radius: 4px; padding: 8px 10px; font-size: 11px; max-height: 130px; overflow: auto;
+}
+.problems ul { margin: 0; padding-left: 16px; }
+.problems li { margin: 2px 0; }
+.problems li.warn { color: #e0c06d; }
+
+/* preview table */
+.preview { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+.preview-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
+.counts { color: var(--muted); font-size: 11px; }
+.table-wrap { flex: 1; overflow: auto; border: 1px solid var(--border); border-radius: 4px; }
+table { width: 100%; border-collapse: collapse; }
+th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
+th { position: sticky; top: 0; background: var(--panel); color: var(--muted); font-weight: 600; font-size: 11px; }
+td .manchete { font-weight: 600; }
+td .subtitulo { color: var(--muted); font-size: 11px; }
+td .badge { display: inline-block; padding: 1px 6px; border-radius: 10px; background: var(--panel-2); border: 1px solid var(--border); font-size: 10px; }
+td .badge.unknown { background: var(--error-bg); border-color: var(--error-border); color: #e6b3b3; }
+tr.empty td { color: var(--muted); text-align: center; padding: 18px 8px; }
+tr.bad td { background: rgba(122, 52, 52, 0.18); }
+
+/* footer */
+footer { display: flex; align-items: center; gap: 10px; }
+footer button { min-width: 96px; }
+.result { font-size: 11px; }
+.result.ok { color: var(--ok); }
+.result.err { color: #e69a9a; }

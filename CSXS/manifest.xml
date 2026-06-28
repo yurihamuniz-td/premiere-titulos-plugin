@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ExtensionManifest xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                   Version="7.0"
+                   ExtensionBundleId="com.td.premiere.titulos"
+                   ExtensionBundleName="Inserir Títulos"
+                   ExtensionBundleVersion="0.1.0">
+
+  <ExtensionList>
+    <Extension Id="com.td.premiere.titulos.panel" Version="0.1.0" />
+  </ExtensionList>
+
+  <ExecutionEnvironment>
+    <HostList>
+      <!-- PPRO = Premiere Pro. Faixa ampla; confirmar a versão do editor (issue needs-human). -->
+      <Host Name="PPRO" Version="[13.0,99.9]" />
+    </HostList>
+    <LocaleList>
+      <Locale Code="All" />
+    </LocaleList>
+    <RequiredRuntimeList>
+      <!-- CSXS 9.0 = CEP 9 (Premiere CC 2019+). Mínimo baixo p/ máxima compatibilidade. -->
+      <RequiredRuntime Name="CSXS" Version="9.0" />
+    </RequiredRuntimeList>
+  </ExecutionEnvironment>
+
+  <DispatchInfoList>
+    <Extension Id="com.td.premiere.titulos.panel">
+      <DispatchInfo>
+        <Resources>
+          <MainPath>./index.html</MainPath>
+          <ScriptPath>./jsx/inserir-titulos.jsx</ScriptPath>
+        </Resources>
+        <Lifecycle>
+          <AutoVisible>true</AutoVisible>
+        </Lifecycle>
+        <UI>
+          <Type>Panel</Type>
+          <Menu>Inserir Títulos</Menu>
+          <Geometry>
+            <Size>
+              <Width>440</Width>
+              <Height>560</Height>
+            </Size>
+            <MinSize>
+              <Width>360</Width>
+              <Height>360</Height>
+            </MinSize>
+          </Geometry>
+        </UI>
+      </DispatchInfo>
+    </Extension>
+  </DispatchInfoList>
+
+</ExtensionManifest>
