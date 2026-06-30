@@ -142,15 +142,18 @@
       if (!res.ok) { setResult(res.error, 'err'); setCanApply(true); return; }
       var msg = res.appliedCount + ' título(s) aplicado(s)';
       if (res.failedCount) msg += ' · ' + res.failedCount + ' falha(s)';
-      /* avisa se nenhum campo foi setado (provável MOGRT nativo do Premiere) */
-      var anySet = false, anyMogrt = false;
+      /* diagnóstico do resultado: campos setados? duração ajustou? é MOGRT de AE? */
+      var anySet = false, anyMogrt = false, durFail = 0;
       for (var i = 0; i < (res.applied || []).length; i++) {
         if (res.applied[i].isMogrt) anyMogrt = true;
         if (res.applied[i].set && res.applied[i].set.length) anySet = true;
+        if (res.applied[i].durOk === false) durFail++;
       }
-      if (res.appliedCount && !anyMogrt) msg += ' — atenção: não é MOGRT de AE (texto não entra)';
-      else if (res.appliedCount && !anySet) msg += ' — atenção: nenhum campo casou (confira o cabeçalho via Diagnóstico)';
-      setResult(msg, (res.failedCount || (res.appliedCount && !anySet)) ? 'err' : 'ok');
+      var warn = false;
+      if (res.appliedCount && !anyMogrt) { msg += ' — atenção: não é MOGRT de AE (texto não entra)'; warn = true; }
+      else if (res.appliedCount && !anySet) { msg += ' — atenção: nenhum campo casou (confira o cabeçalho via Diagnóstico)'; warn = true; }
+      if (durFail) { msg += ' — duração não ajustou em ' + durFail; warn = true; }
+      setResult(msg, (res.failedCount || warn) ? 'err' : 'ok');
       refreshPreview();
     });
   }

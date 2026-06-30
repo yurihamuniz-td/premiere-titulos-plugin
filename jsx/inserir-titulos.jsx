@@ -153,8 +153,14 @@ function inserirTitulos_getPreview(csvPath, trackIndex) {
   }
 }
 
-/* Seta TODOS os campos de um clipe MOGRT cujo display name bate com uma chave de
- * `values` (e cujo valor não é vazio). Genérico: funciona com qualquer MOGRT de AE.
+/* normaliza nome de campo p/ casar de forma tolerante: trim + minúsculo
+ * (assim a coluna "manchete" casa com o display name "Manchete"). */
+function _normField(s) {
+  return String(s == null ? '' : s).replace(/^\s+/, '').replace(/\s+$/, '').toLowerCase();
+}
+
+/* Seta TODOS os campos de um clipe MOGRT cujo display name bate (case-insensitive)
+ * com uma chave de `values` não-vazia. Genérico: funciona com qualquer MOGRT de AE.
  * Retorna { isMogrt, set:[nomes setados], missing:[colunas sem campo no MOGRT] }. */
 function _setAllFields(clip, values) {
   var mgt = clip.getMGTComponent();
@@ -166,9 +172,10 @@ function _setAllFields(clip, values) {
   for (key in values) {
     if (!values.hasOwnProperty(key)) continue;
     if (!values[key] || !values[key].length) continue;   // pula valor vazio (mantém o padrão do MOGRT)
+    var target = _normField(key);
     var found = false;
     for (var i = 0; i < mgt.properties.numItems; i++) {
-      if (mgt.properties[i].displayName === key) {
+      if (_normField(mgt.properties[i].displayName) === target) {
         mgt.properties[i].setValue(values[key], true);
         set.push(key);
         found = true;
@@ -249,12 +256,15 @@ function inserirTitulos_apply(csvPath, trackIndex, mogrtFile) {
         var clip = _clipAtStart(track, p.marker.start);
         if (!clip) { failed.push({ n: i + 1, error: 'Clipe importado não encontrado na track.' }); continue; }
 
+        /* ajusta o out ao tamanho do range. Setamos a Time via .ticks (caminho
+         * confiável; .seconds nem sempre persiste no setter de clip.end). */
         var endT = new Time();
-        endT.seconds = p.marker.end;
-        clip.end = endT;                                    // ajusta o out ao tamanho do range
+        endT.ticks = _secondsToTicks(p.marker.end);
+        clip.end = endT;
+        var durOk = (Math.abs(clip.end.seconds - p.marker.end) <= 0.2);   // confere se pegou
 
         var res = _setAllFields(clip, p.row.values);
-        applied.push({ n: i + 1, isMogrt: res.isMogrt, set: res.set, missing: res.missing });
+        applied.push({ n: i + 1, isMogrt: res.isMogrt, set: res.set, missing: res.missing, durOk: durOk });
       } catch (exItem) {
         failed.push({ n: i + 1, error: exItem.toString() });
       }
