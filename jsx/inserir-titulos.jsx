@@ -88,6 +88,40 @@ function inserirTitulos_env() {
   }
 }
 
+/* Diagnóstico: lista os display names dos parâmetros do MOGRT no ÚLTIMO clipe da
+ * track indicada. Use depois de arrastar 1 instância do .mogrt para a timeline,
+ * para confirmar que os campos se chamam EXATAMENTE "Manchete"/"Subtítulo".
+ * (Se não baterem, é só ajustar FIELD_MANCHETE/FIELD_SUBTITULO em titulos-core.js.) */
+function inserirTitulos_dumpParams(trackIndex) {
+  try {
+    var seq = _activeSeqOrNull();
+    if (!seq) return JSON.stringify({ ok: false, error: 'Nenhuma sequência ativa no Premiere.' });
+
+    var ti = parseInt(trackIndex, 10);
+    if (isNaN(ti) || ti < 0) ti = 0;
+    if (ti >= seq.videoTracks.numTracks) {
+      return JSON.stringify({ ok: false, error: 'A track de vídeo V' + (ti + 1) + ' não existe.' });
+    }
+
+    var track = seq.videoTracks[ti];
+    if (!track.clips || track.clips.numItems === 0) {
+      return JSON.stringify({ ok: false, error: 'A track V' + (ti + 1) + ' está vazia. Arraste o .mogrt para ela primeiro.' });
+    }
+
+    var clip = track.clips[track.clips.numItems - 1];   // último clipe da track
+    var mgt = clip.getMGTComponent();
+    var names = [];
+    if (mgt) {
+      for (var i = 0; i < mgt.properties.numItems; i++) {
+        names.push(String(mgt.properties[i].displayName));
+      }
+    }
+    return JSON.stringify({ ok: true, clipName: String(clip.name || ''), isMogrt: !!mgt, params: names });
+  } catch (e) {
+    return JSON.stringify({ ok: false, error: 'Erro no diagnóstico: ' + e.toString() });
+  }
+}
+
 /* Monta o preview do pareamento marker<->linha (sem alterar nada na timeline). */
 function inserirTitulos_getPreview(csvPath, trackIndex) {
   try {

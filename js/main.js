@@ -158,6 +158,17 @@
     }
   }
 
+  /* diagnóstico: mostra os display names do MOGRT no último clipe da track-alvo */
+  function diag() {
+    callHost('inserirTitulos_dumpParams(' + trackIndex() + ')', function (res) {
+      var el = $('result');
+      if (!res.ok) { el.textContent = res.error; el.className = 'result err'; return; }
+      if (!res.isMogrt) { el.textContent = 'Último clipe ("' + res.clipName + '") não é MOGRT.'; el.className = 'result err'; return; }
+      el.textContent = 'Campos do MOGRT: ' + (res.params.length ? res.params.join(' · ') : '(nenhum exposto)');
+      el.className = 'result ok';
+    });
+  }
+
   function escapeHtml(s) {
     return String(s == null ? '' : s)
       .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -174,6 +185,7 @@
     $('browseDir').addEventListener('click', pickDir);
     $('loadCsv').addEventListener('click', pickCsv);
     $('apply').addEventListener('click', apply);
+    $('diag').addEventListener('click', diag);
 
     refreshEnv();
   }
