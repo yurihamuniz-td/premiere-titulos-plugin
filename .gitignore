@@ -25,3 +25,8 @@ desktop.ini
 # Temporários
 *.log
 *.tmp
+
+# CSVs de teste/scratch do editor (template.csv é versionado de propósito)
+exemplo.csv
+teste.csv
+teste*.csv
