@@ -1,40 +1,21 @@
 /*
- * titulos-core.js — Lógica pura do "Inserir Títulos" (CSV -> lower-thirds).
+ * titulos-core.js — Lógica pura do "Inserir Títulos" (CSV genérico -> MOGRT).
  *
  * NÃO depende do objeto `app` do Premiere, do DOM nem do Node. Tudo aqui opera
  * sobre strings/arrays/objetos simples, para poder ser ao mesmo tempo:
  *   - incluído pelo host ExtendScript via  #include "titulos-core.js"
  *   - exigido pelos testes Node  (require("../jsx/titulos-core.js"))
  *
+ * MODELO GENÉRICO (qualquer MOGRT de After Effects):
+ *   - O CSV é dirigido pelos CAMPOS do MOGRT. A 1ª linha é o cabeçalho com os
+ *     nomes dos campos (= display names expostos no Essential Graphics). Cada
+ *     linha seguinte são os valores.
+ *   - 1 MOGRT por CSV (o arquivo .mogrt é escolhido no painel).
+ *   - O tempo vem dos range markers da sequência, pareados por ordem.
+ *
  * Mantido propositalmente ES3-safe (motor ExtendScript): apenas for-loops
  * clássicos, sem Array.map/filter/forEach/indexOf, sem String.trim, sem JSON.
- * É aqui que mora o risco do português (acentos, BOM, ; vs ,) — por isso é a
- * parte 100% coberta por testes automatizados.
  */
-
-/* ───────────────────────── estilos ───────────────────────── */
-
-var CANONICAL_STYLES = ['l3rd', 'centered', 'question'];
-
-/* chave do estilo (colapsada p/ alfanumérico minúsculo) -> estilo canônico */
-var STYLE_ALIASES = {
-  'l3rd': 'l3rd', 'lowerthird': 'l3rd', 'lt': 'l3rd',
-  'centered': 'centered', 'center': 'centered', 'centralizado': 'centered', 'box': 'centered',
-  'question': 'question', 'pergunta': 'question', 'q': 'question'
-};
-
-/* estilo canônico -> nome do arquivo .mogrt (autorado no After Effects).
- * Os arquivos em si são produzidos no AE — ver mogrt/CONTRACT.md. */
-var STYLE_MOGRT = {
-  'l3rd': 'CT_L3rd.mogrt',
-  'centered': 'CT_Centered.mogrt',
-  'question': 'CT_Question.mogrt'
-};
-
-/* Display names que o MOGRT DEVE expor no Essential Graphics.
- * SUPOSIÇÃO explícita (confirmar ao autorar no AE — ver CONTRACT.md): */
-var FIELD_MANCHETE = 'Manchete';
-var FIELD_SUBTITULO = 'Subtítulo';
 
 /* ───────────────────────── helpers ───────────────────────── */
 
@@ -51,20 +32,12 @@ function stripBom(text) {
   return text || '';
 }
 
-/* normaliza chave: minúsculo, sem acentos do PT. Trata tanto a forma
- * pré-composta (NFC: 'í') quanto a decomposta (NFD: 'i' + marca combinante,
- * comum em CSV gerado no macOS) — senão a coluna "Subtítulo" passa batido. */
-function _normKey(s) {
-  s = _trim(s).toLowerCase();
-  s = s.replace(/[\u0300-\u036f]/g, '');   /* remove marcas diacríticas combinantes (NFD) */
-  s = s.replace(/[áàâãä]/g, 'a').replace(/[éèê]/g, 'e').replace(/[íì]/g, 'i')
-       .replace(/[óòôõ]/g, 'o').replace(/[úù]/g, 'u').replace(/ç/g, 'c');
-  return s;
+function _inArray(x, arr) {
+  for (var i = 0; i < arr.length; i++) { if (arr[i] === x) return true; }
+  return false;
 }
 
-/* sniff do delimitador na 1ª linha NÃO VAZIA: ';' (Excel pt-BR) ou ','.
- * Pular linhas em branco do topo é essencial — senão um CSV pt-BR com ';' e uma
- * linha em branco inicial cairia no default ',' e seria parseado como lixo. */
+/* sniff do delimitador na 1ª linha NÃO VAZIA: ';' (Excel pt-BR) ou ','. */
 function detectDelimiter(text) {
   var lines = String(text).split('\n');
   var firstLine = '';
@@ -117,30 +90,19 @@ function _rowIsEmpty(cells) {
   return true;
 }
 
-/* chave bruta do CSV -> estilo canônico, ou null se desconhecido */
-function normalizeStyle(raw) {
-  var k = _normKey(raw).replace(/[\s_\-]+/g, '');
-  if (STYLE_ALIASES.hasOwnProperty(k)) return STYLE_ALIASES[k];
-  return null;
-}
-
-var HEADER_MAP = {
-  'estilo': 'estilo', 'style': 'estilo',
-  'manchete': 'manchete', 'titulo': 'manchete', 'title': 'manchete', 'headline': 'manchete',
-  'subtitulo': 'subtitulo', 'subtitle': 'subtitulo', 'sub': 'subtitulo'
-};
-
 /*
  * parseRows(text) -> {
- *   delimiter, header (array|null),
- *   rows: [{ line, estiloRaw, estilo(canônico|null), manchete, subtitulo }],
+ *   delimiter,
+ *   fields: [string]                       // nomes das colunas = campos do MOGRT
+ *   rows: [{ line, values: {campo: valor} }],
  *   errors: [string]
  * }
- * Detecta cabeçalho (estilo/manchete/subtitulo). Sem cabeçalho => posicional.
+ * A 1ª linha não vazia é SEMPRE o cabeçalho (nomes de campos). Sem cabeçalho não
+ * dá pra saber os nomes dos campos, então o cabeçalho é obrigatório.
  */
 function parseRows(text) {
   text = stripBom(text || '');
-  var result = { delimiter: ',', header: null, rows: [], errors: [] };
+  var result = { delimiter: ',', fields: [], rows: [], errors: [] };
   if (_trim(text) === '') { result.errors.push('CSV vazio.'); return result; }
 
   var delim = detectDelimiter(text);
@@ -149,59 +111,34 @@ function parseRows(text) {
   var grid = parseDelimited(text, delim);
   var clean = [];
   var r;
-  /* guarda o nº de linha FÍSICO (1-based) junto das células, para que mensagens
-   * de erro apontem a linha certa mesmo com linhas em branco no meio do arquivo. */
+  /* guarda o nº de linha FÍSICO (1-based) para mensagens de erro precisas */
   for (r = 0; r < grid.length; r++) {
     if (!_rowIsEmpty(grid[r])) clean.push({ cells: grid[r], line: r + 1 });
   }
   if (clean.length === 0) { result.errors.push('CSV sem linhas de conteúdo.'); return result; }
 
+  /* cabeçalho = nomes dos campos (preservados como vieram, só com trim, pois
+   * precisam bater EXATAMENTE com os display names do MOGRT — inclusive acento) */
   var head = clean[0].cells;
-  var col = { estilo: -1, manchete: -1, subtitulo: -1 };
-  /* É cabeçalho só se a 1ª célula for um nome de coluna conhecido. Uma linha de
-   * dados começa com o estilo (l3rd/centered/question), que nunca é cabeçalho —
-   * isso evita falso-positivo quando uma célula de dados casa com um alias. */
-  var hasHeader = HEADER_MAP.hasOwnProperty(_normKey(head[0]));
+  var fields = [];
   var h;
-  if (hasHeader) {
-    for (h = 0; h < head.length; h++) {
-      var mapped = HEADER_MAP[_normKey(head[h])];
-      if (mapped && col[mapped] === -1) col[mapped] = h;
-    }
-  }
+  for (h = 0; h < head.length; h++) fields.push(_trim(head[h]));
+  while (fields.length && fields[fields.length - 1] === '') fields.pop();  /* tira colunas-fantasma do fim */
+  if (fields.length === 0) { result.errors.push('CSV sem colunas de campos no cabeçalho.'); return result; }
+  result.fields = fields;
 
-  var startRow;
-  if (hasHeader) {
-    result.header = head;
-    startRow = 1;
-  } else {
-    col.estilo = 0; col.manchete = 1; col.subtitulo = 2;   /* posicional */
-    startRow = 0;
-  }
-
-  if (col.estilo === -1 || col.manchete === -1) {
-    result.errors.push('CSV precisa das colunas "estilo" e "manchete".');
-    return result;
-  }
-
-  if (clean.length === startRow) {   /* só cabeçalho, nenhuma linha de dados */
-    result.errors.push('CSV tem cabeçalho mas nenhuma linha de dados.');
-    return result;
-  }
+  if (clean.length === 1) { result.errors.push('CSV tem cabeçalho mas nenhuma linha de dados.'); return result; }
 
   var dr;
-  for (dr = startRow; dr < clean.length; dr++) {
+  for (dr = 1; dr < clean.length; dr++) {
     var cells = clean[dr].cells;
-    var estiloRaw = col.estilo >= 0 && col.estilo < cells.length ? cells[col.estilo] : '';
-    var manchete = col.manchete >= 0 && col.manchete < cells.length ? cells[col.manchete] : '';
-    var subt = col.subtitulo >= 0 && col.subtitulo < cells.length ? cells[col.subtitulo] : '';
-    result.rows.push({
-      line: clean[dr].line,                       /* nº de linha física p/ mensagens */
-      estiloRaw: _trim(estiloRaw),
-      estilo: normalizeStyle(estiloRaw),          /* canônico ou null */
-      manchete: _trim(manchete),
-      subtitulo: _trim(subt)
-    });
+    var values = {};
+    var c;
+    for (c = 0; c < fields.length; c++) {
+      if (fields[c] === '') continue;
+      values[fields[c]] = c < cells.length ? _trim(cells[c]) : '';
+    }
+    result.rows.push({ line: clean[dr].line, values: values });
   }
   return result;
 }
@@ -224,14 +161,19 @@ function pairByOrder(markers, rows) {
   };
 }
 
-/* validação: retorna lista de { level: 'error'|'warn', message } */
-function validate(parseResult, markers) {
+/*
+ * validate(parseResult, markers, knownFields?) -> [{ level:'error'|'warn', message }]
+ * knownFields (opcional): lista de display names reais do MOGRT (vinda do
+ * Diagnóstico). Se fornecida, avisa sobre colunas que não existem no MOGRT.
+ */
+function validate(parseResult, markers, knownFields) {
   var problems = [];
   var i;
   for (i = 0; i < parseResult.errors.length; i++) {
     problems.push({ level: 'error', message: parseResult.errors[i] });
   }
   var rows = parseResult.rows;
+  var fields = parseResult.fields;
 
   if (markers.length === 0) {
     problems.push({ level: 'error', message: 'Nenhum marcador de range (in/out) encontrado na sequência ativa.' });
@@ -242,20 +184,20 @@ function validate(parseResult, markers) {
       message: 'Nº de marcadores de range (' + markers.length + ') ≠ nº de linhas do CSV (' + rows.length + ').'
     });
   }
-  for (i = 0; i < rows.length; i++) {
-    var row = rows[i];
-    if (row.estilo === null) {
-      problems.push({ level: 'error', message: 'Linha ' + row.line + ': estilo desconhecido "' + row.estiloRaw + '" (use l3rd, centered ou question).' });
-    }
-    if (row.manchete === '') {
-      problems.push({ level: 'error', message: 'Linha ' + row.line + ': manchete vazia.' });
-    }
-  }
-  /* range inválido (in >= out). Na prática o host já filtra esses marcadores
-   * (só passa out > in), mas a camada pura valida por conta própria. */
+  /* range inválido (in >= out). O host já filtra esses, mas a camada pura valida. */
   for (i = 0; i < markers.length; i++) {
     if (markers[i].end <= markers[i].start) {
       problems.push({ level: 'error', message: 'Marcador ' + (i + 1) + ': range inválido (in >= out).' });
+    }
+  }
+  /* colunas do CSV que não existem no MOGRT (só avisa; serão ignoradas).
+   * (Linhas totalmente vazias são tratadas como linha em branco e descartadas
+   * no parse — por isso não há aviso de "linha sem valores" aqui.) */
+  if (knownFields && knownFields.length) {
+    for (i = 0; i < fields.length; i++) {
+      if (!_inArray(fields[i], knownFields)) {
+        problems.push({ level: 'warn', message: 'Coluna "' + fields[i] + '" não existe no MOGRT — será ignorada.' });
+      }
     }
   }
   return problems;
@@ -273,6 +215,7 @@ function formatTimecode(sec) {
   return (hh > 0 ? p2(hh) + ':' : '') + p2(mm) + ':' + p2(ss);
 }
 
+/* buildPreview(pairs) -> [{ n, timecode, durationSec, values }] */
 function buildPreview(pairs) {
   var out = [];
   var i;
@@ -284,30 +227,39 @@ function buildPreview(pairs) {
       outSec: p.marker.end,
       timecode: formatTimecode(p.marker.start) + '–' + formatTimecode(p.marker.end),
       durationSec: Math.round((p.marker.end - p.marker.start) * 100) / 100,
-      estilo: p.row.estilo,
-      estiloRaw: p.row.estiloRaw,
-      manchete: p.row.manchete,
-      subtitulo: p.row.subtitulo
+      values: p.row.values
     });
   }
   return out;
 }
 
+/* monta o cabeçalho de CSV a partir dos campos do MOGRT (usado pelo Diagnóstico) */
+function csvHeaderFromFields(fieldNames, delimiter) {
+  var d = delimiter || ',';
+  var parts = [];
+  var i;
+  for (i = 0; i < fieldNames.length; i++) {
+    var name = String(fieldNames[i]);
+    /* aspas se o nome tiver o delimitador ou aspas */
+    if (name.indexOf(d) >= 0 || name.indexOf('"') >= 0) {
+      name = '"' + name.replace(/"/g, '""') + '"';
+    }
+    parts.push(name);
+  }
+  return parts.join(d);
+}
+
 /* ───────── export p/ Node (ignorado pelo ExtendScript) ───────── */
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
-    CANONICAL_STYLES: CANONICAL_STYLES,
-    STYLE_MOGRT: STYLE_MOGRT,
-    FIELD_MANCHETE: FIELD_MANCHETE,
-    FIELD_SUBTITULO: FIELD_SUBTITULO,
     stripBom: stripBom,
     detectDelimiter: detectDelimiter,
     parseDelimited: parseDelimited,
     parseRows: parseRows,
-    normalizeStyle: normalizeStyle,
     pairByOrder: pairByOrder,
     validate: validate,
     formatTimecode: formatTimecode,
-    buildPreview: buildPreview
+    buildPreview: buildPreview,
+    csvHeaderFromFields: csvHeaderFromFields
   };
 }

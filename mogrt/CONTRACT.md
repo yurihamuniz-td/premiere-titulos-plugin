@@ -1,54 +1,39 @@
-# Contrato dos MOGRT (interface entre o After Effects e o painel)
+# Como o painel casa o CSV com o MOGRT
 
-Esta pasta guarda os `.mogrt` exportados do After Effects. Os arquivos em si são
-**autorados no AE** (depende do Yuri / GUI — ver issues `needs-human`). Enquanto
-não existem, este documento é o **stub/mock**: define o contrato que o backend
-(`jsx/titulos-core.js`) já assume, para que o resto do plugin seja construído e
-testado sem o AE.
+O plugin é **genérico**: funciona com **qualquer MOGRT de After Effects**. Não há
+nomes de campo fixos — as **colunas do CSV** são os **campos do MOGRT** que você
+escolheu. Esta pasta é só um lugar conveniente para guardar os `.mogrt`.
 
-> Se algum nome aqui mudar ao autorar no AE, atualize também
-> `jsx/titulos-core.js` (`STYLE_MOGRT`, `FIELD_MANCHETE`, `FIELD_SUBTITULO`).
+## A regra (uma frase)
 
-## 1. Estilos → arquivo `.mogrt`
+> Para cada linha do CSV, o painel importa o MOGRT alvo e, para **cada coluna**,
+> procura um parâmetro do Essential Graphics cujo **display name** seja **igual** ao
+> nome da coluna — e seta o valor daquela célula. Coluna sem campo correspondente é
+> ignorada; célula vazia mantém o texto padrão do MOGRT.
 
-| Chave no CSV (`estilo`) | Estilo               | Arquivo esperado nesta pasta |
-|-------------------------|----------------------|------------------------------|
-| `l3rd`                  | Lower third          | `CT_L3rd.mogrt`              |
-| `centered`              | Texto centralizado   | `CT_Centered.mogrt`         |
-| `question`              | Pergunta             | `CT_Question.mogrt`         |
+## O fluxo
 
-Aliases aceitos no CSV (normalizados pelo parser): `lower third`, `lt` → `l3rd`;
-`center`, `centralizado`, `box` → `centered`; `pergunta`, `q` → `question`.
+1. No painel → **Configurações**, escolha o **MOGRT alvo** (um arquivo `.mogrt`).
+2. Arraste **uma instância** desse MOGRT para a track-alvo e clique em
+   **Diagnóstico: ler campos do MOGRT**. Ele lista os campos e monta o
+   **cabeçalho do CSV** pronto pra colar.
+3. Monte o CSV com esse cabeçalho (uma linha por título) e aplique.
 
-## 2. Campos de texto expostos no Essential Graphics
+## Requisitos do MOGRT
 
-Cada `.mogrt` **precisa** expor os campos de texto com **exatamente** estes
-*display names* (o backend casa por display name, com acento):
+- Precisa ser um **MOGRT de After Effects** com o texto **exposto no Essential
+  Graphics** (Texto de origem → "Adicionar propriedade aos Gráficos essenciais").
+  - ⚠️ MOGRT **autorado nativamente no Premiere** (a partir de um gráfico) **não
+    funciona** para injeção: ele vira um "Gráfico" comum e não tem
+    `getMGTComponent()`. O Diagnóstico avisa ("não é MOGRT").
+- O **nome do campo** no Essential Graphics é o que vira a **coluna do CSV** — então
+  nomeie os campos de forma estável (ex.: `Manchete`, `Subtítulo`, ou o que fizer
+  sentido para aquele template).
+- Acentos no nome do campo são OK, mas o cabeçalho do CSV precisa bater
+  **exatamente** — por isso o Diagnóstico gera o cabeçalho pra você não errar.
 
-| Display name no Essential Graphics | Vem da coluna do CSV | Obrigatório |
-|------------------------------------|----------------------|-------------|
-| `Manchete`                         | `manchete`           | sim         |
-| `Subtítulo`                        | `subtitulo`          | não (pode ficar vazio) |
+## Auto-fit (opcional)
 
-- O estilo `centered` pode ter só `Manchete` — se o `.mogrt` não tiver `Subtítulo`,
-  o backend simplesmente não seta o subtítulo (sem erro).
-- O auto-fit (texto preenchendo a largura da box) deve estar **embutido no MOGRT**
-  (Master Properties ou expressão `sourceRectAtTime`), avaliado em runtime pelo
-  Premiere ao trocar o texto via script. Ver `docs/PLAN.md` → "Estratégia de
-  simplificação do MOGRT".
-
-## 3. Como o backend usa este contrato
-
-`jsx/inserir-titulos.jsx`, para cada par marcador↔linha:
-
-1. `seq.importMGT(<pasta>/CT_<Estilo>.mogrt, <in do marcador>, trackAlvo, trackAlvo)`
-2. `clip.end = <out do marcador>` (ajusta a duração ao range)
-3. `getMGTComponent()` → acha a propriedade com `displayName === "Manchete"` → `setValue(texto, true)`
-4. idem para `"Subtítulo"`, se houver texto.
-
-## 4. Suposições a confirmar no AE (issues `needs-human`)
-
-- Nomes exatos das comps de origem: `CT_L3rd`, centralizado (≈ `CT_Centered Clean Box`), `CT_Question`.
-- Se o auto-fit do pacote "Sliced Bread" reescala sozinho (expressão) ou por slider manual
-  (decide Master Properties vs. rebuild — **Milestone 0** do PLAN).
-- Os display names `Manchete` / `Subtítulo` ao promover/expor os textos.
+Se quiser que o texto preencha a box sozinho, embuta o auto-fit **no MOGRT** (Master
+Properties ou expressão `sourceRectAtTime`) — ver `docs/PLAN.md`. O painel não
+interfere nisso: ele só troca o texto; o auto-fit roda no runtime do Premiere.

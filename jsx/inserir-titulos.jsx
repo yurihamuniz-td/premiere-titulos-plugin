@@ -88,10 +88,10 @@ function inserirTitulos_env() {
   }
 }
 
-/* Diagnóstico: lista os display names dos parâmetros do MOGRT no ÚLTIMO clipe da
- * track indicada. Use depois de arrastar 1 instância do .mogrt para a timeline,
- * para confirmar que os campos se chamam EXATAMENTE "Manchete"/"Subtítulo".
- * (Se não baterem, é só ajustar FIELD_MANCHETE/FIELD_SUBTITULO em titulos-core.js.) */
+/* Diagnóstico: lista os display names dos campos do MOGRT no ÚLTIMO clipe da
+ * track indicada. Use depois de arrastar 1 instância do .mogrt para a timeline:
+ * os nomes listados são exatamente as colunas que o CSV deve ter (o painel monta
+ * o cabeçalho pronto a partir daqui). */
 function inserirTitulos_dumpParams(trackIndex) {
   try {
     var seq = _activeSeqOrNull();
@@ -141,6 +141,7 @@ function inserirTitulos_getPreview(csvPath, trackIndex) {
       ok: true,
       canApply: !_hasBlockingError(problems),
       delimiter: parsed.delimiter,
+      fields: parsed.fields,
       markerCount: paired.markerCount,
       rowCount: paired.rowCount,
       countMatch: paired.countMatch,
@@ -152,32 +153,45 @@ function inserirTitulos_getPreview(csvPath, trackIndex) {
   }
 }
 
-/* Injeta um texto num clipe MOGRT, casando pelo display name do parâmetro
- * exposto no Essential Graphics. Retorna true se encontrou e setou. */
-function _setMogrtText(clip, displayName, value) {
+/* Seta TODOS os campos de um clipe MOGRT cujo display name bate com uma chave de
+ * `values` (e cujo valor não é vazio). Genérico: funciona com qualquer MOGRT de AE.
+ * Retorna { isMogrt, set:[nomes setados], missing:[colunas sem campo no MOGRT] }. */
+function _setAllFields(clip, values) {
   var mgt = clip.getMGTComponent();
-  if (!mgt) return false;
-  for (var i = 0; i < mgt.properties.numItems; i++) {
-    if (mgt.properties[i].displayName === displayName) {
-      mgt.properties[i].setValue(value, true);
-      return true;
+  if (!mgt) return { isMogrt: false, set: [], missing: [] };
+
+  var set = [];
+  var missing = [];
+  var key;
+  for (key in values) {
+    if (!values.hasOwnProperty(key)) continue;
+    if (!values[key] || !values[key].length) continue;   // pula valor vazio (mantém o padrão do MOGRT)
+    var found = false;
+    for (var i = 0; i < mgt.properties.numItems; i++) {
+      if (mgt.properties[i].displayName === key) {
+        mgt.properties[i].setValue(values[key], true);
+        set.push(key);
+        found = true;
+        break;
+      }
     }
+    if (!found) missing.push(key);
   }
-  return false;
+  return { isMogrt: true, set: set, missing: missing };
 }
 
 /*
- * Aplica os títulos na sequência ativa.
+ * Aplica os títulos na sequência ativa, usando UM arquivo .mogrt para todas as linhas.
  * Re-lê CSV + markers (não confia em estado do painel), revalida e, para cada par:
- *   importMGT(estilo) no in do marcador -> ajusta o out ao marcador -> injeta textos.
+ *   importMGT no in do marcador -> ajusta o out ao marcador -> seta os campos por nome.
  * Retorna JSON { ok, appliedCount, failedCount, applied[], failed[] }.
  *
  * NOTA (a confirmar no Premiere real — issue needs-human de teste end-to-end):
- *  - `clip.end = Time` ajusta o ponto de saída do clipe de gráfico.
- *  - A API de scripting do Premiere NÃO agrupa ações em um único undo; desfazer
- *    pode exigir vários Ctrl+Z. Ver README (limitações).
+ *  - Pega "o último clipe da track" após importar, então a track-alvo deve estar
+ *    livre nos pontos de inserção (ver README, limitações).
+ *  - A API de scripting do Premiere NÃO agrupa ações em um único undo.
  */
-function inserirTitulos_apply(csvPath, trackIndex, mogrtDir) {
+function inserirTitulos_apply(csvPath, trackIndex, mogrtFile) {
   try {
     var seq = _activeSeqOrNull();
     if (!seq) return JSON.stringify({ ok: false, error: 'Nenhuma sequência ativa no Premiere.' });
@@ -200,8 +214,9 @@ function inserirTitulos_apply(csvPath, trackIndex, mogrtDir) {
       return JSON.stringify({ ok: false, error: 'A track de vídeo V' + (ti + 1) + ' não existe nesta sequência.' });
     }
 
-    var dir = String(mogrtDir || '').replace(/[\\\/]+$/, '');   // sem barra final
-    if (dir === '') return JSON.stringify({ ok: false, error: 'Defina a pasta dos .mogrt nas configurações.' });
+    var mogrtPath = String(mogrtFile || '');
+    if (mogrtPath === '') return JSON.stringify({ ok: false, error: 'Escolha o arquivo .mogrt alvo nas configurações.' });
+    if (!(new File(mogrtPath)).exists) return JSON.stringify({ ok: false, error: 'MOGRT não encontrado: ' + mogrtPath });
 
     var paired = pairByOrder(markers, parsed.rows);
     var applied = [];
@@ -209,14 +224,6 @@ function inserirTitulos_apply(csvPath, trackIndex, mogrtDir) {
 
     for (var i = 0; i < paired.pairs.length; i++) {
       var p = paired.pairs[i];
-      var fname = STYLE_MOGRT[p.row.estilo];
-      var mogrtPath = dir + '/' + fname;
-
-      if (!(new File(mogrtPath)).exists) {
-        failed.push({ n: i + 1, error: 'MOGRT não encontrado: ' + mogrtPath });
-        continue;
-      }
-
       try {
         seq.importMGT(mogrtPath, _secondsToTicks(p.marker.start), ti, ti);
 
@@ -227,13 +234,8 @@ function inserirTitulos_apply(csvPath, trackIndex, mogrtDir) {
         endT.seconds = p.marker.end;
         clip.end = endT;                                    // ajusta o out ao tamanho do range
 
-        var mancheteOk = _setMogrtText(clip, FIELD_MANCHETE, p.row.manchete);
-        var subOk = true;
-        if (p.row.subtitulo && p.row.subtitulo.length) {
-          subOk = _setMogrtText(clip, FIELD_SUBTITULO, p.row.subtitulo);
-        }
-
-        applied.push({ n: i + 1, estilo: p.row.estilo, mancheteSet: mancheteOk, subtituloSet: subOk });
+        var res = _setAllFields(clip, p.row.values);
+        applied.push({ n: i + 1, isMogrt: res.isMogrt, set: res.set, missing: res.missing });
       } catch (exItem) {
         failed.push({ n: i + 1, error: exItem.toString() });
       }

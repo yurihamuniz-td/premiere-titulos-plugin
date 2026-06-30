@@ -45,6 +45,11 @@ header h1 { margin: 0; font-size: 14px; font-weight: 600; }
   border: 1px solid var(--border); border-radius: 3px; padding: 5px 6px; font: inherit;
 }
 .hint { color: var(--muted); font-size: 10.5px; margin: 6px 0 2px; }
+.diag-out { margin-top: 8px; padding: 6px 8px; border: 1px solid var(--border); border-radius: 4px; background: var(--panel-2); font-size: 11px; word-break: break-word; }
+.diag-out.ok { border-color: #2f5d3f; }
+.diag-out.err { border-color: var(--error-border); color: #e6b3b3; }
+.diag-out code { display: inline-block; margin-top: 3px; padding: 2px 5px; background: #1b1b1b; border-radius: 3px; color: #cfe6ff; user-select: all; }
+td .muted { color: var(--muted); }
 
 /* buttons */
 button {

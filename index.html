@@ -23,14 +23,15 @@
           <option value="4">V5</option>
         </select>
       </label>
-      <label>Pasta dos .mogrt
+      <label>MOGRT alvo (.mogrt)
         <span class="row">
-          <input id="mogrtDir" type="text" placeholder="…/mogrt" spellcheck="false">
-          <button id="browseDir" class="ghost" type="button">Escolher…</button>
+          <input id="mogrtFile" type="text" placeholder="…/algum.mogrt" spellcheck="false">
+          <button id="browseFile" class="ghost" type="button">Escolher…</button>
         </span>
       </label>
-      <p class="hint">Cor de marcador não é usada para filtrar (limitação da API do Premiere): contam todos os marcadores de <em>range</em> (in/out).</p>
-      <button id="diag" class="ghost" type="button" title="Lê os display names do MOGRT no último clipe da track-alvo">Diagnóstico: ler campos do MOGRT</button>
+      <p class="hint">As colunas do CSV são os <em>campos</em> deste MOGRT. Cor de marcador não filtra (limitação da API): contam todos os marcadores de <em>range</em> (in/out).</p>
+      <button id="diag" class="ghost" type="button" title="Lê os campos do MOGRT no último clipe da track-alvo e monta o cabeçalho do CSV">Diagnóstico: ler campos do MOGRT</button>
+      <div id="diagOut" class="diag-out" hidden></div>
     </details>
   </section>
 
@@ -47,11 +48,11 @@
     </div>
     <div class="table-wrap">
       <table id="previewTable">
-        <thead>
-          <tr><th>#</th><th>Tempo (in–out)</th><th>Estilo</th><th>Manchete / Subtítulo</th></tr>
+        <thead id="previewHead">
+          <tr><th>#</th><th>Tempo (in–out)</th><th>Campos</th></tr>
         </thead>
         <tbody id="previewBody">
-          <tr class="empty"><td colspan="4">Carregue um CSV para ver o pareamento marcador ↔ linha.</td></tr>
+          <tr class="empty"><td colspan="3">Carregue um CSV para ver o pareamento marcador ↔ linha.</td></tr>
         </tbody>
       </table>
     </div>
