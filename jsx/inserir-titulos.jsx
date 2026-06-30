@@ -180,15 +180,31 @@ function _setAllFields(clip, values) {
   return { isMogrt: true, set: set, missing: missing };
 }
 
+/* Acha o clipe da track cujo início bate com startSec (tolerância 0,5s) — usado
+ * logo após importMGT para pegar o clipe recém-inserido independentemente de
+ * quantos outros clipes já existam na track. Cai no último como fallback. */
+function _clipAtStart(track, startSec) {
+  var best = null, bestDiff = 1e9;
+  for (var i = 0; i < track.clips.numItems; i++) {
+    var c = track.clips[i];
+    var d = c.start.seconds - startSec;
+    if (d < 0) d = -d;
+    if (d < bestDiff) { bestDiff = d; best = c; }
+  }
+  if (best && bestDiff <= 0.5) return best;
+  return track.clips.numItems ? track.clips[track.clips.numItems - 1] : null;
+}
+
 /*
  * Aplica os títulos na sequência ativa, usando UM arquivo .mogrt para todas as linhas.
  * Re-lê CSV + markers (não confia em estado do painel), revalida e, para cada par:
  *   importMGT no in do marcador -> ajusta o out ao marcador -> seta os campos por nome.
  * Retorna JSON { ok, appliedCount, failedCount, applied[], failed[] }.
  *
- * NOTA (a confirmar no Premiere real — issue needs-human de teste end-to-end):
- *  - Pega "o último clipe da track" após importar, então a track-alvo deve estar
- *    livre nos pontos de inserção (ver README, limitações).
+ * NOTA:
+ *  - Pega o clipe pelo TEMPO do marcador (_clipAtStart), então a track-alvo pode
+ *    ter outros clipes. Evite re-aplicar por cima de títulos antigos nos MESMOS
+ *    pontos (apague-os antes).
  *  - A API de scripting do Premiere NÃO agrupa ações em um único undo.
  */
 function inserirTitulos_apply(csvPath, trackIndex, mogrtFile) {
@@ -228,7 +244,10 @@ function inserirTitulos_apply(csvPath, trackIndex, mogrtFile) {
         seq.importMGT(mogrtPath, _secondsToTicks(p.marker.start), ti, ti);
 
         var track = seq.videoTracks[ti];
-        var clip = track.clips[track.clips.numItems - 1];   // o recém-importado é o último da track
+        /* acha o clipe pelo TEMPO do marcador (não pela posição na lista), para
+         * funcionar mesmo com a track-alvo já tendo outros clipes. */
+        var clip = _clipAtStart(track, p.marker.start);
+        if (!clip) { failed.push({ n: i + 1, error: 'Clipe importado não encontrado na track.' }); continue; }
 
         var endT = new Time();
         endT.seconds = p.marker.end;

@@ -97,8 +97,9 @@ um instalador. (Assinatura com certificado oficial = passo humano — ver checkl
 
 - **Só MOGRT de After Effects**: MOGRT criado nativamente no Premiere não tem
   `getMGTComponent()` e não recebe a injeção de texto (o Diagnóstico avisa).
-- **Track-alvo livre**: o Aplicar pega "o último clipe da track" após importar, então a
-  track-alvo deve estar livre nos pontos onde os títulos entram.
+- **Re-aplicar**: o Aplicar acha o clipe pelo tempo do marcador, então a track-alvo pode
+  ter outros clipes. Mas evite re-aplicar por cima de títulos antigos nos mesmos pontos —
+  apague-os antes.
 - **Undo**: a API do Premiere não agrupa ações de script em um único passo; desfazer a
   aplicação pode exigir vários `Ctrl+Z`.
 
