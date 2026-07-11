@@ -49,6 +49,70 @@ Veja [`template.csv`](template.csv) para um exemplo pronto.
 > MOGRT criado nativamente no Premiere vira um "Gráfico" e não recebe a injeção de
 > texto — o Diagnóstico avisa.
 
+## Fase 2 — Importar o corte do Koota (opcional)
+
+Se o primeiro corte foi montado no **Koota**, você não precisa criar os range
+markers na mão nem digitar o CSV do zero: o conversor gera um **XML (FCP7/XMEML)**
+com a sequência já cortada + **um range marker por clip**, e opcionalmente um
+**CSV rascunho** com o texto transcrito de cada trecho. O fluxo normal do painel
+(carregar CSV → preview → Aplicar) continua idêntico. Detalhes e decisões:
+[PRD #14](https://github.com/yurihamuniz-td/premiere-titulos-plugin/issues/14).
+
+### Passo a passo
+
+1. **Gerar o XML** apontando para a pasta `_edit` do projeto Koota (fica ao lado
+   do vídeo, ex.: `R05_edit`):
+
+   ```powershell
+   node tools/koota2xmeml.js "C:\...\Footage\R05_edit"
+   ```
+
+   Sai `R05_koota.xml` dentro da própria pasta. Para gerar **também o CSV
+   rascunho**, cole o cabeçalho que o botão **Diagnóstico** do painel gerou:
+
+   ```powershell
+   node tools/koota2xmeml.js "C:\...\Footage\R05_edit" --csv-header "Manchete,Subtítulo" --csv-quote-col "Manchete"
+   ```
+
+   Sai também `R05_titulos.csv` com o texto transcrito de cada clip na coluna
+   `Manchete` (as demais ficam vazias = mantêm o texto padrão do MOGRT).
+
+2. **Importar no Premiere**: `File > Import` → escolha o `.xml`. A sequência
+   chega com o corte pronto, a mídia original relinkada e os markers de range.
+
+3. **Podar**: nem todo corte merece título — apague os **markers** dos trechos
+   sem título (na timeline) e as **linhas correspondentes** do CSV. O painel
+   valida a contagem marcador↔linha antes de Aplicar, então descasamento não passa.
+
+4. **Seguir o fluxo normal**: revisar os textos do CSV → painel → **Carregar
+   CSV** → conferir o preview → **Aplicar**.
+
+### Opções do conversor
+
+| Opção | Efeito | Default |
+|---|---|---|
+| `--out arquivo.xml` | caminho do XML | `<pasta>\<nome>_koota.xml` |
+| `--name nome` | nome da sequência | nome da pasta sem `_edit` |
+| `--fps n` | timebase (inteiro) | fps do `koota.json` (30) |
+| `--width n` / `--height n` | dimensões da sequência | do `koota.json` (1080×1920) |
+| `--csv-header "…"` | cabeçalho do Diagnóstico → liga o CSV rascunho | (sem CSV) |
+| `--csv-quote-col col` | coluna que recebe o texto transcrito | 1ª coluna |
+| `--csv arquivo.csv` | caminho do CSV | `<pasta>\<nome>_titulos.csv` |
+
+### Limitações e avisos
+
+- **Timebase inteiro apenas** (24/25/30/50/60). Footage NTSC/29.97 fica fora do
+  MVP — se for o seu caso, abra um issue (a fatia `ntsc TRUE` está prevista).
+- O conversor lê a montagem **viva** do `koota.json` (auto-salva a cada edição no
+  Koota — não precisa renderizar). Se o `koota.json` estiver sem clips (projetos
+  de versões antigas do Koota), ele cai para os `ranges` do `edl.json` com um
+  **aviso** — esse arquivo só é atualizado ao renderizar e pode estar defasado.
+- Os clips apontam para os **arquivos-fonte originais** (caminhos absolutos do
+  `edl.json`), não para o MP4 renderizado do Koota.
+- O que ainda depende de validação humana no Premiere real (markers importarem
+  como range etc.) está no issue
+  [#20](https://github.com/yurihamuniz-td/premiere-titulos-plugin/issues/20).
+
 ## Instalação
 
 ### Modo desenvolvimento (extensão não assinada)
@@ -135,6 +199,8 @@ js/main.js                 lógica do painel (carrega CSV, preview, aplicar)
 jsx/inserir-titulos.jsx    backend ExtendScript (markers, importMGT, injeção genérica)
 jsx/titulos-core.js        lógica pura (testável em Node e incluída no host)
 jsx/json2.js               polyfill JSON (idempotente; ES3)
+tools/koota2xmeml.js       CLI do conversor Koota → XMEML (Fase 2)
+tools/koota2xmeml-core.js  lógica pura do conversor (testável em Node)
 mogrt/CONTRACT.md          como o CSV casa com os campos do MOGRT
 template.csv               CSV de exemplo
 test/                      testes Node da lógica pura
