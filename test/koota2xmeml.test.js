@@ -223,6 +223,99 @@ test('markers: quote longo é truncado no name mas inteiro no comment', () => {
   assert.equal(m.comment, long);
 });
 
+/* ───────── CSV rascunho (#17) ───────── */
+
+const titulos = require('../jsx/titulos-core.js');
+
+test('csv: quote na coluna indicada, demais vazias; nº de linhas = nº de markers', () => {
+  const koota = makeKoota([clip(0, 2, 'primeira manchete'), clip(3, 5, 'segunda')]);
+  const r = core.convert(koota, makeEdl(SRC), {
+    seqName: 'R05', csvHeader: 'Manchete,Subtítulo', csvQuoteCol: 'Manchete'
+  });
+  assert.ok(r.csv);
+  const parsed = titulos.parseRows(r.csv);
+  assert.equal(parsed.errors.length, 0);
+  assert.deepEqual(parsed.fields, ['Manchete', 'Subtítulo']);
+  assert.equal(parsed.rows.length, grabMarkers(r.xml).length);
+  assert.equal(parsed.rows[0].values['Manchete'], 'primeira manchete');
+  assert.equal(parsed.rows[0].values['Subtítulo'], '');
+  assert.equal(parsed.rows[1].values['Manchete'], 'segunda');
+});
+
+test('csv: round-trip — vírgula, aspas e acento sobrevivem ao parser do painel', () => {
+  const q1 = 'Sora, Runway e "Pika": à corrida da IA';
+  const q2 = 'linha\ncom quebra';
+  const r = core.convert(makeKoota([clip(0, 2, q1), clip(3, 5, q2)]), makeEdl(SRC), {
+    seqName: 'R05', csvHeader: 'Manchete,Subtítulo'
+  });
+  const parsed = titulos.parseRows(r.csv);
+  assert.equal(parsed.errors.length, 0);
+  assert.equal(parsed.rows[0].values['Manchete'], q1);
+  /* parseRows trima o valor; a quebra interna sobrevive */
+  assert.equal(parsed.rows[1].values['Manchete'], q2);
+});
+
+test('csv: cabeçalho pt-BR com ; (Excel) mantém o delimitador', () => {
+  const r = core.convert(makeKoota([clip(0, 2, 'texto; com ponto-e-vírgula')]), makeEdl(SRC), {
+    seqName: 'R05', csvHeader: 'Manchete;Subtítulo'
+  });
+  const parsed = titulos.parseRows(r.csv);
+  assert.equal(parsed.delimiter, ';');
+  assert.equal(parsed.rows[0].values['Manchete'], 'texto; com ponto-e-vírgula');
+});
+
+test('csv: default da coluna do quote é a 1ª do cabeçalho', () => {
+  const r = core.convert(makeKoota([clip(0, 2, 'olá')]), makeEdl(SRC), {
+    seqName: 'R05', csvHeader: 'Título,Autor'
+  });
+  const parsed = titulos.parseRows(r.csv);
+  assert.equal(parsed.rows[0].values['Título'], 'olá');
+});
+
+test('csv: começa com BOM e usa CRLF (Excel pt-BR)', () => {
+  const r = core.convert(makeKoota([clip(0, 2, 'x')]), makeEdl(SRC), {
+    seqName: 'R05', csvHeader: 'Manchete'
+  });
+  assert.equal(r.csv.charCodeAt(0), 0xFEFF);
+  assert.match(r.csv, /\r\n/);
+});
+
+test('csv: coluna inexistente → erro claro com as colunas disponíveis', () => {
+  assert.throws(
+    () => core.convert(makeKoota([clip(0, 2, 'x')]), makeEdl(SRC), {
+      seqName: 'R05', csvHeader: 'Manchete,Subtítulo', csvQuoteCol: 'Titulo'
+    }),
+    /Coluna "Titulo" não existe.*Manchete, Subtítulo/
+  );
+});
+
+test('csv: sem csvHeader não gera CSV (csv = null)', () => {
+  const r = core.convert(makeKoota([clip(0, 2, 'x')]), makeEdl(SRC), { seqName: 'R05' });
+  assert.equal(r.csv, null);
+});
+
+test('buildCsv: cabeçalho vazio → erro', () => {
+  assert.throws(() => core.buildCsv('', 'X', ['a']), /Cabeçalho.*vazio/);
+});
+
+test('CLI: --csv-header gera o CSV rascunho junto do XML', () => {
+  const editDir = tmpProject(makeKoota([clip(0, 2, 'olá, mundo')]), makeEdl(SRC));
+  const out = execFileSync(process.execPath,
+    [CLI, editDir, '--csv-header', 'Manchete,Subtítulo', '--csv-quote-col', 'Manchete'],
+    { encoding: 'utf8' });
+  assert.match(out, /CSV rascunho gerado/);
+  const csvPath = path.join(editDir, 'R05_titulos.csv');
+  const parsed = titulos.parseRows(fs.readFileSync(csvPath, 'utf8'));
+  assert.equal(parsed.rows[0].values['Manchete'], 'olá, mundo');
+});
+
+test('CLI: --csv sem --csv-header → exit 1', () => {
+  const editDir = tmpProject(makeKoota([clip(0, 2)]), makeEdl(SRC));
+  const r = spawnSync(process.execPath, [CLI, editDir, '--csv', 'x.csv'], { encoding: 'utf8' });
+  assert.equal(r.status, 1);
+  assert.match(r.stderr, /--csv-header/);
+});
+
 /* ───────── validações ───────── */
 
 test('convert: timeline vazia nos dois arquivos → erro claro', () => {

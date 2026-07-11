@@ -30,6 +30,10 @@
 const TICK_RATE = 254016000000; // ticks por segundo do Premiere
 const VIDEO_TIME_FORMAT = { 24: 100, 25: 101, 30: 102, 50: 103, 60: 105 };
 
+/* parser CSV do painel — reusado p/ interpretar o cabeçalho do Diagnóstico e
+ * garantir round-trip exato com o que o painel vai ler depois */
+const titulos = require('../jsx/titulos-core.js');
+
 /* ───────────────────────── helpers ───────────────────────── */
 
 function xmlEscape(s) {
@@ -112,6 +116,55 @@ function extractClips(koota, edl) {
   }
 
   throw new Error('Timeline vazia: o koota.json não tem clips e o edl.json não tem ranges. Monte o corte no Koota antes de converter.');
+}
+
+/* ───────────────── CSV rascunho (formato do Diagnóstico) ───────────────── */
+
+/*
+ * buildCsv(headerLine, quoteCol, quotes) -> string CSV (UTF-8 com BOM, CRLF)
+ *
+ * headerLine: a 1ª linha do CSV EXATAMENTE como o Diagnóstico gerou (é ela que
+ *   define os nomes das colunas = display names do MOGRT e o delimitador).
+ *   Vai para o arquivo verbatim — o painel exige que o cabeçalho bata.
+ * quoteCol: nome da coluna que recebe o texto transcrito (default: a 1ª).
+ * quotes: um texto por clip, na MESMA ordem dos markers do XML — assim as
+ *   contagens marker↔linha batem por construção.
+ */
+function buildCsv(headerLine, quoteCol, quotes) {
+  const header = titulos.stripBom(String(headerLine || '')).replace(/[\r\n]+$/, '');
+  if (header.trim() === '') {
+    throw new Error('Cabeçalho do CSV vazio — cole a linha gerada pelo botão Diagnóstico do painel.');
+  }
+  const delim = titulos.detectDelimiter(header);
+  const fields = titulos.parseDelimited(header, delim)[0].map((f) => String(f).trim());
+  while (fields.length && fields[fields.length - 1] === '') fields.pop();
+  if (fields.length === 0) {
+    throw new Error('Cabeçalho do CSV sem colunas — cole a linha gerada pelo Diagnóstico.');
+  }
+
+  const target = quoteCol === undefined || quoteCol === null || String(quoteCol).trim() === ''
+    ? fields[0]
+    : String(quoteCol).trim();
+  const quoteIdx = fields.indexOf(target);
+  if (quoteIdx < 0) {
+    throw new Error(`Coluna "${target}" não existe no cabeçalho. Colunas disponíveis: ${fields.join(', ')}.`);
+  }
+
+  function escapeCell(v) {
+    const s = String(v);
+    if (s.indexOf(delim) >= 0 || s.indexOf('"') >= 0 || s.indexOf('\n') >= 0 || s.indexOf('\r') >= 0) {
+      return '"' + s.replace(/"/g, '""') + '"';
+    }
+    return s;
+  }
+
+  const lines = quotes.map((q) => {
+    const cells = fields.map((_, i) => (i === quoteIdx ? escapeCell(String(q || '').trim()) : ''));
+    return cells.join(delim);
+  });
+
+  /* BOM (U+FEFF, invisível) p/ o Excel pt-BR abrir como UTF-8; o parser do painel remove */
+  return '﻿' + header + '\r\n' + lines.join('\r\n') + '\r\n';
 }
 
 /* ───────────────────────── blocos do XML ───────────────────────── */
@@ -326,7 +379,10 @@ function emptyAudioTrackXml(explodedIdx, outCh) {
  *   fps?      timebase inteiro (default: timeline.fps do koota.json, senão 30)
  *   width?, height?  dimensões da sequência (default: timeline do koota.json,
  *                    senão 1080×1920 — o default do modelo do Koota)
+ *   csvHeader?    cabeçalho do Diagnóstico → gera também o CSV rascunho
+ *   csvQuoteCol?  coluna que recebe o quote (default: a 1ª do cabeçalho)
  * }
+ * Retorna { xml, csv, warnings } — csv é null sem csvHeader.
  */
 function convert(koota, edl, opts) {
   opts = opts || {};
@@ -550,7 +606,12 @@ function convert(koota, edl, opts) {
     '\t</bin>\n' +
     '</xmeml>\n';
 
-  return { xml, warnings };
+  /* CSV rascunho (opcional): uma linha por clip, na ordem dos markers */
+  const csv = opts.csvHeader !== undefined
+    ? buildCsv(opts.csvHeader, opts.csvQuoteCol, segs.map((s) => s.quote))
+    : null;
+
+  return { xml, csv, warnings };
 }
 
 /* ───────── export p/ Node ───────── */
@@ -561,5 +622,6 @@ module.exports = {
   basename,
   pseudoUuid,
   extractClips,
+  buildCsv,
   convert
 };

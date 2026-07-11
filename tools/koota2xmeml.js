@@ -13,6 +13,12 @@
  *   --width <n>           largura da sequência (default: do koota.json, senão 1080)
  *   --height <n>          altura da sequência (default: do koota.json, senão 1920)
  *
+ * CSV rascunho (opcional — os quotes do Koota viram rascunho dos títulos):
+ *   --csv-header "<linha>"  cabeçalho EXATO gerado pelo botão Diagnóstico do painel
+ *   --csv-quote-col <col>   coluna que recebe o texto (default: a 1ª do cabeçalho)
+ *   --csv <arquivo.csv>     caminho do CSV (default: <pasta>\<nome>_titulos.csv;
+ *                           só é gerado se --csv-header for passado)
+ *
  * Sai com código 0 em sucesso; 1 em erro (mensagem "Erro: …" no stderr).
  * Avisos não-fatais saem como "Aviso: …" no stderr.
  */
@@ -51,7 +57,7 @@ function readJson(file, label) {
     return { missing: true };
   }
   try {
-    return { data: JSON.parse(text.replace(/^﻿/, '')) };
+    return { data: JSON.parse(text.replace(/^﻿/, '')) };  /* tolera BOM (U+FEFF, invisível) */
   } catch (e) {
     fail(`${label} não é um JSON válido (${file}): ${e.message}`);
   }
@@ -86,13 +92,19 @@ function main() {
   const dirName = path.basename(editDir);
   const seqName = args.name || (dirName.endsWith('_edit') ? dirName.slice(0, -'_edit'.length) : dirName);
 
+  if (args.csv !== undefined && args['csv-header'] === undefined) {
+    fail('--csv precisa de --csv-header (cole a linha gerada pelo botão Diagnóstico do painel).');
+  }
+
   let result;
   try {
     result = core.convert(kootaRes.data || null, edlRes.data, {
       seqName,
       fps: intOpt(args, 'fps'),
       width: intOpt(args, 'width'),
-      height: intOpt(args, 'height')
+      height: intOpt(args, 'height'),
+      csvHeader: args['csv-header'],
+      csvQuoteCol: args['csv-quote-col']
     });
   } catch (e) {
     fail(e.message);
@@ -103,6 +115,11 @@ function main() {
   const outXml = args.out ? path.resolve(args.out) : path.join(editDir, seqName + '_koota.xml');
   fs.writeFileSync(outXml, result.xml, 'utf8');
   process.stdout.write(`XML gerado: ${outXml}\n`);
+  if (result.csv !== null) {
+    const outCsv = args.csv ? path.resolve(args.csv) : path.join(editDir, seqName + '_titulos.csv');
+    fs.writeFileSync(outCsv, result.csv, 'utf8');
+    process.stdout.write(`CSV rascunho gerado: ${outCsv}\n`);
+  }
   process.stdout.write('Importe no Premiere via File > Import (a sequência chega com o corte e os markers).\n');
 }
 
