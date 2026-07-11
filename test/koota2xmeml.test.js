@@ -163,6 +163,66 @@ test('convert: koota.json COM clips ignora ranges defasados do edl.json (sem avi
   assert.doesNotMatch(xml, /<in>150<\/in>/);
 });
 
+/* ───────── sequence range markers (#16) ───────── */
+
+function grabMarkers(xml) {
+  const out = [];
+  const re = /<marker>\s*<name>([^<]*)<\/name>\s*<comment>([^<]*)<\/comment>\s*<in>(\d+)<\/in>\s*<out>(\d+)<\/out>\s*<\/marker>/g;
+  let m;
+  while ((m = re.exec(xml)) !== null) {
+    out.push({ name: m[1], comment: m[2], in: Number(m[3]), out: Number(m[4]) });
+  }
+  return out;
+}
+
+test('markers: exatamente 1 por clip, dentro de <sequence>, in/out = start/end do clipitem', () => {
+  const koota = makeKoota([clip(21.69, 23.68, 'primeiro'), clip(0.34, 9.74, 'segundo')]);
+  const { xml } = core.convert(koota, makeEdl(SRC), { seqName: 'R05' });
+  const markers = grabMarkers(xml);
+  assert.equal(markers.length, 2);
+  /* offsets de saída: clip1 [0,59), clip2 [59,341) */
+  assert.deepEqual({ in: markers[0].in, out: markers[0].out }, { in: 0, out: 59 });
+  assert.deepEqual({ in: markers[1].in, out: markers[1].out }, { in: 59, out: 341 });
+  /* todos dentro da <sequence>, não dos clips do bin */
+  const seqPart = xml.slice(xml.indexOf('<sequence'));
+  assert.equal((seqPart.match(/<marker>/g) || []).length, 2);
+});
+
+test('markers: sempre range (out > in), nunca ponto (out = -1)', () => {
+  const clips = [];
+  for (let i = 0; i < 50; i++) clips.push(clip(i * 3, i * 3 + 1.5, 'q' + i));
+  const { xml } = core.convert(makeKoota(clips), makeEdl(SRC), { seqName: 'R05' });
+  const markers = grabMarkers(xml);
+  assert.equal(markers.length, 50);
+  for (const m of markers) assert.ok(m.out > m.in, `marker in=${m.in} out=${m.out}`);
+  assert.doesNotMatch(xml, /<out>-1<\/out>/);
+});
+
+test('markers: quote com acento/&/<>/aspas escapado; XML segue bem-formado', () => {
+  const q = 'Sora & Runway: <corrida> da "IA" à atenção';
+  const { xml } = core.convert(makeKoota([clip(0, 2, q)]), makeEdl(SRC), { seqName: 'R05' });
+  assertWellFormed(xml);
+  const markers = grabMarkers(xml);
+  assert.equal(markers.length, 1);
+  assert.equal(markers[0].comment, 'Sora &amp; Runway: &lt;corrida&gt; da &quot;IA&quot; à atenção');
+});
+
+test('markers: quote vazio ganha nome de fallback com o nº do clip', () => {
+  const { xml } = core.convert(makeKoota([clip(0, 1, ''), clip(2, 3, '')]), makeEdl(SRC), { seqName: 'R05' });
+  const markers = grabMarkers(xml);
+  assert.equal(markers[0].name, 'Clip 1');
+  assert.equal(markers[1].name, 'Clip 2');
+});
+
+test('markers: quote longo é truncado no name mas inteiro no comment', () => {
+  const long = 'palavra '.repeat(20).trim(); /* 159 chars */
+  const { xml } = core.convert(makeKoota([clip(0, 2, long)]), makeEdl(SRC), { seqName: 'R05' });
+  const m = grabMarkers(xml)[0];
+  assert.equal(m.name.length, 60);
+  assert.ok(m.name.endsWith('…'));
+  assert.equal(m.comment, long);
+});
+
 /* ───────── validações ───────── */
 
 test('convert: timeline vazia nos dois arquivos → erro claro', () => {

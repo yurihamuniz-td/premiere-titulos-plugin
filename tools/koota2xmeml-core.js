@@ -284,6 +284,23 @@ function masterclipXml(src, fps, width, height) {
   );
 }
 
+/* sequence range marker (um por clip do corte) — é o que o painel consome no
+ * Aplicar. Pela spec FCP7: out > in define um RANGE; out = -1 seria ponto.
+ * name = quote truncado (legível na timeline), comment = quote inteiro. */
+function markerXml(seg) {
+  const i = '\t'.repeat(4);
+  const quote = String(seg.quote || '').replace(/\s+/g, ' ').trim();
+  const name = quote === '' ? `Clip ${seg.n}` : (quote.length > 60 ? quote.slice(0, 59) + '…' : quote);
+  return (
+    `${i}<marker>\n` +
+    `${i}\t<name>${xmlEscape(name)}</name>\n` +
+    `${i}\t<comment>${xmlEscape(quote)}</comment>\n` +
+    `${i}\t<in>${seg.startF}</in>\n` +
+    `${i}\t<out>${seg.endF}</out>\n` +
+    `${i}</marker>`
+  );
+}
+
 const AUDIO_TRACK_ATTRS =
   'TL.SQTrackAudioKeyframeStyle="0" TL.SQTrackShy="0" ' +
   'TL.SQTrackExpandedHeight="41" TL.SQTrackExpanded="0" ' +
@@ -411,6 +428,7 @@ function convert(koota, edl, opts) {
     emptyAudioTrackXml(0, 1), emptyAudioTrackXml(1, 2),
     emptyAudioTrackXml(0, 1), emptyAudioTrackXml(1, 2)
   ].join('\n');
+  const markers = segs.map((s) => markerXml(s)).join('\n');
 
   const xml =
     '<?xml version="1.0" encoding="UTF-8"?>\n' +
@@ -522,6 +540,7 @@ function convert(koota, edl, opts) {
     '\t\t\t\t\t<frame>0</frame>\n' +
     '\t\t\t\t\t<displayformat>NDF</displayformat>\n' +
     '\t\t\t\t</timecode>\n' +
+    `${markers}\n` +
     '\t\t\t\t<labels>\n' +
     '\t\t\t\t\t<label2>Forest</label2>\n' +
     '\t\t\t\t</labels>\n' +
