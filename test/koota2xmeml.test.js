@@ -354,6 +354,73 @@ test('pathToUrl: exige caminho absoluto com letra de drive', () => {
   assert.equal(core.pathToUrl('D:\\a b\\c.mp4'), 'file://localhost/D%3a/a%20b/c.mp4');
 });
 
+/* ───────── multi-fonte (#18) ───────── */
+
+const SRC2 = {
+  R05: 'C:\\Videos\\R05.mp4',
+  R09: 'C:\\Videos\\R09 (take extra).mp4'
+};
+
+test('multi-fonte: fontes intercaladas → um masterclip/file por fonte, na ordem de 1ª aparição', () => {
+  const clips = [
+    clip(0, 2, 'a', 'R05'),
+    clip(1, 3, 'b', 'R09'),
+    clip(4, 6, 'c', 'R05'),
+    clip(5, 7, 'd', 'R09')
+  ];
+  const { xml } = core.convert(makeKoota(clips), makeEdl(SRC2), { seqName: 'Multi' });
+  assertWellFormed(xml);
+
+  /* 2 masterclips, na ordem de aparição (R05 primeiro) */
+  assert.equal((xml.match(/<clip id="masterclip-/g) || []).length, 2);
+  assert.ok(xml.indexOf('masterclip-1') < xml.indexOf('masterclip-2'));
+  const mc1 = xml.indexOf('<clip id="masterclip-1"');
+  const mc2 = xml.indexOf('<clip id="masterclip-2"');
+  assert.ok(xml.slice(mc1, mc2).includes('R05.mp4'), 'masterclip-1 é o R05');
+  assert.ok(xml.slice(mc2).includes('R09%20(take%20extra).mp4'), 'masterclip-2 é o R09');
+
+  /* clipitems da sequência: 3 por segmento (v+a1+a2), 4 segmentos, + 6 do bin */
+  assert.equal((xml.match(/<clipitem id="/g) || []).length, 6 + 12);
+});
+
+test('multi-fonte: cada <file> é definido UMA vez (com pathurl); resto é referência vazia', () => {
+  const clips = [clip(0, 2, 'a', 'R05'), clip(1, 3, 'b', 'R09'), clip(4, 6, 'c', 'R05')];
+  const { xml } = core.convert(makeKoota(clips), makeEdl(SRC2), { seqName: 'Multi' });
+
+  assert.equal((xml.match(/<pathurl>/g) || []).length, 2, 'um pathurl por fonte');
+  assert.equal((xml.match(/<file id="file-1">/g) || []).length, 1, 'file-1 definido 1x');
+  assert.equal((xml.match(/<file id="file-2">/g) || []).length, 1, 'file-2 definido 1x');
+  /* referências vazias: 3 por clipitem do bin de áudio + 3 por segmento */
+  assert.ok((xml.match(/<file id="file-1"\/>/g) || []).length >= 3, 'refs vazias p/ file-1');
+  assert.ok((xml.match(/<file id="file-2"\/>/g) || []).length >= 3, 'refs vazias p/ file-2');
+});
+
+test('multi-fonte: clipitem da sequência aponta p/ o file e o masterclip da SUA fonte', () => {
+  const clips = [clip(0, 2, 'a', 'R05'), clip(1, 3, 'b', 'R09')];
+  const { xml } = core.convert(makeKoota(clips), makeEdl(SRC2), { seqName: 'Multi' });
+
+  /* recorta a track de vídeo da sequência e pega os 2 clipitems na ordem */
+  const track = xml.slice(xml.indexOf('MZ.TrackTargeted="1">'));
+  const items = track.split('<clipitem id="').slice(1, 3);
+  assert.match(items[0], /<masterclipid>masterclip-1<\/masterclipid>/);
+  assert.match(items[0], /<file id="file-1"\/>/);
+  assert.match(items[0], /<name>R05\.mp4<\/name>/);
+  assert.match(items[1], /<masterclipid>masterclip-2<\/masterclipid>/);
+  assert.match(items[1], /<file id="file-2"\/>/);
+});
+
+test('multi-fonte: srcFrames por fonte = maior out usado daquela fonte', () => {
+  const clips = [clip(0, 2, 'a', 'R05'), clip(1, 9.5, 'b', 'R09'), clip(4, 6, 'c', 'R05')];
+  const { xml } = core.convert(makeKoota(clips), makeEdl(SRC2), { seqName: 'Multi' });
+  const mc2 = xml.slice(xml.indexOf('<clip id="masterclip-2"'), xml.indexOf('<sequence'));
+  assert.match(mc2, /<duration>285<\/duration>/); /* round(9.5*30) */
+});
+
+test('multi-fonte: fonte fora do mapa sources continua sendo erro claro', () => {
+  const clips = [clip(0, 2, 'a', 'R05'), clip(1, 3, 'b', 'R77')];
+  assert.throws(() => core.convert(makeKoota(clips), makeEdl(SRC2), {}), /Fonte "R77"/);
+});
+
 /* ───────── CLI de ponta a ponta ───────── */
 
 const CLI = path.join(__dirname, '..', 'tools', 'koota2xmeml.js');
