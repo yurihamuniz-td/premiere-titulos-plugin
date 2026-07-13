@@ -32,12 +32,15 @@ function fail(msg) {
   process.exit(1);
 }
 
+const KNOWN_OPTS = ['out', 'name', 'fps', 'width', 'height', 'csv', 'csv-header', 'csv-quote-col'];
+
 function parseArgs(argv) {
   const args = { _: [] };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a.startsWith('--')) {
       const key = a.slice(2);
+      if (!KNOWN_OPTS.includes(key)) fail(`Opção desconhecida: --${key}. Opções: ${KNOWN_OPTS.map((k) => '--' + k).join(', ')}.`);
       const val = argv[i + 1];
       if (val === undefined || val.startsWith('--')) fail(`Opção --${key} precisa de um valor.`);
       args[key] = val;
@@ -54,7 +57,9 @@ function readJson(file, label) {
   try {
     text = fs.readFileSync(file, 'utf8');
   } catch (e) {
-    return { missing: true };
+    if (e.code === 'ENOENT') return { missing: true };
+    /* EACCES/EBUSY etc. NÃO é "ausente" — cair no fallback geraria corte defasado */
+    fail(`não consegui ler ${label} (${file}): ${e.message}`);
   }
   try {
     return { data: JSON.parse(text.replace(/^﻿/, '')) };  /* tolera BOM (U+FEFF, invisível) */
@@ -92,8 +97,8 @@ function main() {
   const dirName = path.basename(editDir);
   const seqName = args.name || (dirName.endsWith('_edit') ? dirName.slice(0, -'_edit'.length) : dirName);
 
-  if (args.csv !== undefined && args['csv-header'] === undefined) {
-    fail('--csv precisa de --csv-header (cole a linha gerada pelo botão Diagnóstico do painel).');
+  if ((args.csv !== undefined || args['csv-quote-col'] !== undefined) && args['csv-header'] === undefined) {
+    fail('--csv/--csv-quote-col precisam de --csv-header (cole a linha gerada pelo botão Diagnóstico do painel).');
   }
 
   let result;
@@ -112,12 +117,20 @@ function main() {
 
   for (const w of result.warnings) process.stderr.write('Aviso: ' + w + '\n');
 
+  function writeOut(file, content) {
+    try {
+      fs.writeFileSync(file, content, 'utf8');
+    } catch (e) {
+      fail(`não consegui escrever ${file}: ${e.message}`);
+    }
+  }
+
   const outXml = args.out ? path.resolve(args.out) : path.join(editDir, seqName + '_koota.xml');
-  fs.writeFileSync(outXml, result.xml, 'utf8');
+  writeOut(outXml, result.xml);
   process.stdout.write(`XML gerado: ${outXml}\n`);
   if (result.csv !== null) {
     const outCsv = args.csv ? path.resolve(args.csv) : path.join(editDir, seqName + '_titulos.csv');
-    fs.writeFileSync(outCsv, result.csv, 'utf8');
+    writeOut(outCsv, result.csv);
     process.stdout.write(`CSV rascunho gerado: ${outCsv}\n`);
   }
   process.stdout.write('Importe no Premiere via File > Import (a sequência chega com o corte e os markers).\n');

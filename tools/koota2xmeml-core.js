@@ -28,7 +28,9 @@
  */
 
 const TICK_RATE = 254016000000; // ticks por segundo do Premiere
-const VIDEO_TIME_FORMAT = { 24: 100, 25: 101, 30: 102, 50: 103, 60: 105 };
+/* enum TimeDisplay do Premiere (MZ.Sequence.VideoTimeDisplayFormat):
+ * 100=24, 101=25, 104=30, 105=50, 108=60. Também é a lista de fps aceitos. */
+const VIDEO_TIME_FORMAT = { 24: 100, 25: 101, 30: 104, 50: 105, 60: 108 };
 
 /* parser CSV do painel — reusado p/ interpretar o cabeçalho do Diagnóstico e
  * garantir round-trip exato com o que o painel vai ler depois */
@@ -53,7 +55,8 @@ function pathToUrl(winPath) {
     throw new Error(`Caminho de fonte inválido (esperado caminho absoluto do Windows, ex.: C:\\…): "${winPath}"`);
   }
   const drive = p.charAt(0);
-  const rest = p.slice(2).replace(/ /g, '%20');
+  /* % antes dos espaços, senão um "%" literal no nome vira escape inválido */
+  const rest = p.slice(2).replace(/%/g, '%25').replace(/ /g, '%20');
   return `file://localhost/${drive}%3a${rest}`;
 }
 
@@ -92,12 +95,17 @@ function extractClips(koota, edl) {
 
   if (kootaClips.length > 0) {
     return {
-      clips: kootaClips.map((c) => ({
-        sourceId: c.sourceId,
-        inSec: c.inSec,
-        outSec: c.outSec,
-        quote: typeof c.quote === 'string' ? c.quote : ''
-      })),
+      clips: kootaClips.map((c, i) => {
+        if (!c || typeof c !== 'object') {
+          throw new Error(`Clip ${i + 1} inválido no koota.json (arquivo truncado/corrompido?).`);
+        }
+        return {
+          sourceId: c.sourceId,
+          inSec: c.inSec,
+          outSec: c.outSec,
+          quote: typeof c.quote === 'string' ? c.quote : ''
+        };
+      }),
       usedEdlFallback: false
     };
   }
@@ -105,12 +113,17 @@ function extractClips(koota, edl) {
   const ranges = (edl && Array.isArray(edl.ranges)) ? edl.ranges : [];
   if (ranges.length > 0) {
     return {
-      clips: ranges.map((r) => ({
-        sourceId: r.source,
-        inSec: r.start,
-        outSec: r.end,
-        quote: typeof r.quote === 'string' ? r.quote : ''
-      })),
+      clips: ranges.map((r, i) => {
+        if (!r || typeof r !== 'object') {
+          throw new Error(`Range ${i + 1} inválido no edl.json (arquivo truncado/corrompido?).`);
+        }
+        return {
+          sourceId: r.source,
+          inSec: r.start,
+          outSec: r.end,
+          quote: typeof r.quote === 'string' ? r.quote : ''
+        };
+      }),
       usedEdlFallback: true
     };
   }
@@ -145,6 +158,9 @@ function buildCsv(headerLine, quoteCol, quotes) {
   const target = quoteCol === undefined || quoteCol === null || String(quoteCol).trim() === ''
     ? fields[0]
     : String(quoteCol).trim();
+  if (target === '') {
+    throw new Error('A 1ª coluna do cabeçalho está sem nome — cole o cabeçalho exato do Diagnóstico ou indique a coluna do texto com --csv-quote-col.');
+  }
   const quoteIdx = fields.indexOf(target);
   if (quoteIdx < 0) {
     throw new Error(`Coluna "${target}" não existe no cabeçalho. Colunas disponíveis: ${fields.join(', ')}.`);
@@ -158,8 +174,12 @@ function buildCsv(headerLine, quoteCol, quotes) {
     return s;
   }
 
-  const lines = quotes.map((q) => {
-    const cells = fields.map((_, i) => (i === quoteIdx ? escapeCell(String(q || '').trim()) : ''));
+  const lines = quotes.map((q, n) => {
+    /* quote vazio vira placeholder ("Clip N", igual ao marker) — uma linha
+     * toda vazia seria DESCARTADA pelo parseRows do painel e quebraria a
+     * contagem marker↔linha */
+    const text = String(q || '').trim() || `Clip ${n + 1}`;
+    const cells = fields.map((_, i) => (i === quoteIdx ? escapeCell(text) : ''));
     return cells.join(delim);
   });
 
@@ -403,8 +423,8 @@ function convert(koota, edl, opts) {
 
   const timeline = (koota && koota.timeline) || {};
   const fps = opts.fps !== undefined ? opts.fps : (timeline.fps !== undefined ? timeline.fps : 30);
-  if (!Number.isInteger(fps) || fps <= 0 || TICK_RATE % fps !== 0) {
-    throw new Error(`fps inválido: ${fps}. Use um timebase inteiro suportado (ex.: 24, 25, 30, 50, 60). NTSC/29.97 está fora do MVP.`);
+  if (!Number.isInteger(fps) || VIDEO_TIME_FORMAT[fps] === undefined) {
+    throw new Error(`fps inválido: ${fps}. Use um timebase suportado: 24, 25, 30, 50 ou 60. NTSC/29.97 está fora do MVP.`);
   }
   const width = opts.width !== undefined ? opts.width : (timeline.width !== undefined ? timeline.width : 1080);
   const height = opts.height !== undefined ? opts.height : (timeline.height !== undefined ? timeline.height : 1920);
@@ -473,7 +493,7 @@ function convert(koota, edl, opts) {
   for (const seg of segs) seg.a1Id = nextId++;
   for (const seg of segs) seg.a2Id = nextId++;
 
-  const vtf = VIDEO_TIME_FORMAT[fps] !== undefined ? VIDEO_TIME_FORMAT[fps] : 101;
+  const vtf = VIDEO_TIME_FORMAT[fps];
   const masterclips = sources.map((s) => masterclipXml(s, fps, width, height)).join('\n');
   const videoClips = segs.map((s) => videoClipitemXml(s, s.src, fps, ticksPerFrame)).join('\n');
   const audio1Clips = segs.map((s) => audioClipitemXml(s, s.src, fps, ticksPerFrame, 1)).join('\n');

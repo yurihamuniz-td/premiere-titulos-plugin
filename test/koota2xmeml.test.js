@@ -298,6 +298,23 @@ test('buildCsv: cabeçalho vazio → erro', () => {
   assert.throws(() => core.buildCsv('', 'X', ['a']), /Cabeçalho.*vazio/);
 });
 
+test('csv: quote vazio vira placeholder — linha NUNCA é descartada pelo parser do painel', () => {
+  /* regressão (review): linha toda vazia era descartada pelo parseRows e
+   * quebrava a contagem marker↔linha */
+  const koota = makeKoota([clip(0, 2, 'primeiro'), clip(3, 5, ''), clip(6, 8, 'terceiro')]);
+  const r = core.convert(koota, makeEdl(SRC), { seqName: 'R05', csvHeader: 'Manchete,Subtítulo' });
+  const parsed = titulos.parseRows(r.csv);
+  assert.equal(parsed.errors.length, 0);
+  assert.equal(parsed.rows.length, 3, 'todas as linhas sobrevivem');
+  assert.equal(parsed.rows.length, grabMarkers(r.xml).length, 'contagem = markers');
+  assert.equal(parsed.rows[1].values['Manchete'], 'Clip 2');
+  assert.equal(parsed.rows[2].values['Manchete'], 'terceiro', 'ordem preservada');
+});
+
+test('csv: cabeçalho com 1ª coluna sem nome → erro claro (quote iria p/ coluna fantasma)', () => {
+  assert.throws(() => core.buildCsv(',Texto', undefined, ['oi']), /coluna do cabeçalho está sem nome/);
+});
+
 test('CLI: --csv-header gera o CSV rascunho junto do XML', () => {
   const editDir = tmpProject(makeKoota([clip(0, 2, 'olá, mundo')]), makeEdl(SRC));
   const out = execFileSync(process.execPath,
@@ -341,8 +358,29 @@ test('convert: clip menor que 1 frame no fps escolhido → erro', () => {
   );
 });
 
-test('convert: fps não inteiro ou não divisor do tick rate → erro', () => {
+test('convert: fps não inteiro ou fora da lista suportada → erro', () => {
   assert.throws(() => core.convert(makeKoota([clip(0, 1)]), makeEdl(SRC), { fps: 29.97 }), /fps inválido/);
+  /* regressão (review): 48 divide o tick rate mas não é um timebase suportado */
+  assert.throws(() => core.convert(makeKoota([clip(0, 1)]), makeEdl(SRC), { fps: 48 }), /fps inválido/);
+});
+
+test('convert: VideoTimeDisplayFormat correto por fps (enum TimeDisplay do Premiere)', () => {
+  /* regressão (review): 30 usava 102 (=29.97 drop) e a régua exibia timecode errado */
+  const at = (fps) => {
+    const koota = makeKoota([clip(0, 1)], { fps });
+    const { xml } = core.convert(koota, makeEdl(SRC), { seqName: 'S' });
+    return /MZ\.Sequence\.VideoTimeDisplayFormat="(\d+)"/.exec(xml)[1];
+  };
+  assert.equal(at(24), '100');
+  assert.equal(at(25), '101');
+  assert.equal(at(30), '104');
+  assert.equal(at(50), '105');
+  assert.equal(at(60), '108');
+});
+
+test('convert: clip null no koota.json → erro com o nº do clip, não TypeError cru', () => {
+  const koota = makeKoota([clip(0, 1, 'ok'), null]);
+  assert.throws(() => core.convert(koota, makeEdl(SRC), {}), /Clip 2 inválido/);
 });
 
 test('convert: edl.json sem mapa sources → erro', () => {
@@ -352,6 +390,12 @@ test('convert: edl.json sem mapa sources → erro', () => {
 test('pathToUrl: exige caminho absoluto com letra de drive', () => {
   assert.throws(() => core.pathToUrl('videos/take.mp4'), /absoluto/);
   assert.equal(core.pathToUrl('D:\\a b\\c.mp4'), 'file://localhost/D%3a/a%20b/c.mp4');
+});
+
+test('pathToUrl: % literal no nome é escapado antes dos espaços', () => {
+  /* regressão (review): "%" cru virava sequência de escape inválida no pathurl */
+  assert.equal(core.pathToUrl('C:\\V\\desconto 50%.mp4'), 'file://localhost/C%3a/V/desconto%2050%25.mp4');
+  assert.equal(core.pathToUrl('C:\\V\\take %20 v2.mp4'), 'file://localhost/C%3a/V/take%20%2520%20v2.mp4');
 });
 
 /* ───────── multi-fonte (#18) ───────── */
@@ -480,4 +524,47 @@ test('CLI: pasta inexistente → exit 1', () => {
   const r = spawnSync(process.execPath, [CLI, 'C:\\nao\\existe\\aqui_edit'], { encoding: 'utf8' });
   assert.equal(r.status, 1);
   assert.match(r.stderr, /Pasta não encontrada/);
+});
+
+test('CLI: opção desconhecida (typo) → exit 1, nunca silêncio', () => {
+  /* regressão (review): --fpss 24 era ignorado e gerava XML no fps errado */
+  const editDir = tmpProject(makeKoota([clip(0, 2)]), makeEdl(SRC));
+  const r = spawnSync(process.execPath, [CLI, editDir, '--fpss', '24'], { encoding: 'utf8' });
+  assert.equal(r.status, 1);
+  assert.match(r.stderr, /Opção desconhecida: --fpss/);
+});
+
+test('CLI: --fps não numérico ou sem valor → exit 1', () => {
+  const editDir = tmpProject(makeKoota([clip(0, 2)]), makeEdl(SRC));
+  const r1 = spawnSync(process.execPath, [CLI, editDir, '--fps', 'abc'], { encoding: 'utf8' });
+  assert.equal(r1.status, 1);
+  assert.match(r1.stderr, /--fps/);
+  const r2 = spawnSync(process.execPath, [CLI, editDir, '--fps'], { encoding: 'utf8' });
+  assert.equal(r2.status, 1);
+  assert.match(r2.stderr, /--fps precisa de um valor/);
+});
+
+test('CLI: koota.json com JSON quebrado → exit 1 com "não é um JSON válido"', () => {
+  const editDir = tmpProject(null, makeEdl(SRC));
+  fs.writeFileSync(path.join(editDir, 'koota.json'), '{ timeline: quebrado', 'utf8');
+  const r = spawnSync(process.execPath, [CLI, editDir], { encoding: 'utf8' });
+  assert.equal(r.status, 1);
+  assert.match(r.stderr, /koota\.json não é um JSON válido/);
+});
+
+test('CLI: --out em pasta inexistente → exit 1 "Erro:", sem stack trace', () => {
+  /* regressão (review): writeFileSync fora do try/catch vazava o stack do Node */
+  const editDir = tmpProject(makeKoota([clip(0, 2)]), makeEdl(SRC));
+  const r = spawnSync(process.execPath,
+    [CLI, editDir, '--out', 'C:\\definitivamente\\nao\\existe\\saida.xml'], { encoding: 'utf8' });
+  assert.equal(r.status, 1);
+  assert.match(r.stderr, /Erro: não consegui escrever/);
+  assert.doesNotMatch(r.stderr, /at Object\./, 'sem stack trace');
+});
+
+test('CLI: --csv-quote-col sem --csv-header → exit 1', () => {
+  const editDir = tmpProject(makeKoota([clip(0, 2)]), makeEdl(SRC));
+  const r = spawnSync(process.execPath, [CLI, editDir, '--csv-quote-col', 'Manchete'], { encoding: 'utf8' });
+  assert.equal(r.status, 1);
+  assert.match(r.stderr, /--csv-header/);
 });
