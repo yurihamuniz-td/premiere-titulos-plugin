@@ -141,9 +141,27 @@ com a sequência já cortada + **um range marker por clip**, e opcionalmente um
 
 ### Modo produção (entregar ao editor)
 
-Assinar a extensão como **ZXP** com [ZXPSignCmd](https://github.com/Adobe-CEP/CEP-Resources)
-e instalar com o [ZXP/UXP Installer](https://aescripts.com/learn/zxp-installer/) ou via
-um instalador. (Assinatura com certificado oficial = passo humano — ver checklist abaixo.)
+O repo tem o empacotamento pronto ([`tools/package-zxp.ps1`](tools/package-zxp.ps1)):
+
+```powershell
+powershell -ExecutionPolicy Bypass -File tools\package-zxp.ps1 -CertPassword "<senha>"
+```
+
+Ele baixa o `ZXPSignCmd` oficial da Adobe (uma vez), monta só o runtime do painel,
+cria um **certificado auto-assinado** (`dist\cert.p12`, validade 10 anos — suficiente
+para CEP, não há aprovação da Adobe) e gera `dist\inserir-titulos-<versão>.zxp`
+assinado e verificado.
+
+**No computador do editor**: instalar o `.zxp` com o
+[ZXP/UXP Installer](https://aescripts.com/learn/zxp-installer/) (2 cliques) —
+**sem** PlayerDebugMode. Além do painel, o editor precisa de: os arquivos
+**`.mogrt`** (apontados nas Configurações do painel) e as **fontes da marca**
+instaladas. Node.js não é necessário para o painel.
+
+> Guarde a senha e o `dist\cert.p12`: versões futuras devem ser assinadas com o
+> **mesmo** certificado para atualizar por cima sem desinstalar. Cert e `.zxp`
+> ficam fora do git; o `.zxp` é distribuído pelos
+> [releases do GitHub](https://github.com/yurihamuniz-td/premiere-titulos-plugin/releases).
 
 ## Configurações do painel
 
@@ -174,7 +192,9 @@ um instalador. (Assinatura com certificado oficial = passo humano — ver checkl
       (decide Master Properties vs. rebuild). Só importa para os MOGRTs estilizados.
 - [ ] Autorar os `.mogrt` da marca com os campos de texto expostos no Essential Graphics
       (ver [`mogrt/CONTRACT.md`](mogrt/CONTRACT.md)).
-- [ ] Assinar o ZXP com certificado de distribuição.
+- [x] Assinar o ZXP (auto-assinado, `tools/package-zxp.ps1`) — resta só instalar
+      via ZXP Installer na máquina do editor e confirmar que carrega sem
+      PlayerDebugMode.
 - [ ] Instalar as fontes da marca na máquina do editor (Plus Jakarta Sans, Gelasio,
       Fin Serif Display, Courier New).
 

@@ -5,6 +5,8 @@ npm-debug.log*
 # Extensão empacotada/assinada (gerada na build de produção)
 *.zxp
 *.p12
+dist/
+tools/ZXPSignCmd.exe
 
 # Projeto/insumos do After Effects e footage — NÃO versionar (binário pesado)
 *.aep
